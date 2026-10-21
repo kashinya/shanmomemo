@@ -1,0 +1,80 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build (arm64 + x86_64)
+        id: build
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+
+      - name: Check universal binary
+        run: |
+          ARCHS_FOUND="$(lipo -archs "build/メモ帳.app/Contents/MacOS/Memocho")"
+          echo "$ARCHS_FOUND"
+          for ARCH in arm64 x86_64; do
+            case " $ARCHS_FOUND " in
+              *" $ARCH "*) ;;
+              *) echo "::error::$ARCH が入ってない" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: Zip app
+        if: success()
+        run: ditto -c -k --keepParent "build/メモ帳.app" Memocho.zip
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Memocho-app
+          path: Memocho.zip
+          if-no-files-found: error
+
+      - name: Post compiler errors to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          touch build.log
+          # error: の行と、その下のソース行・キャレット行を拾う。arm64 と x86_64 で同じものが出るので重複は消す
+          awk '
+            /: error: / { n = 3 }
+            n > 0 { print; n--; if (n == 0) print "" }
+          ' build.log | awk 'BEGIN { RS = ""; ORS = "\n\n" } !seen[$0]++' > errors.txt
+          {
+            echo "### ビルド失敗 (\`${SHA:0:7}\`)"
+            echo
+            echo "$(grep -c ': error: ' errors.txt || true) 件の error（arm64 / x86_64 の重複は除いた） — [ログ]($RUN_URL)"
+            echo
+            echo '```'
+            if [ -s errors.txt ]; then
+              head -c 55000 errors.txt
+            else
+              echo "(error: の行なし。ログの末尾)"
+              tail -n 60 build.log
+            fi
+            echo '```'
+          } > comment.md
+          gh api "repos/${{ github.repository }}/issues/$PR/comments" -F body=@comment.md > /dev/null
