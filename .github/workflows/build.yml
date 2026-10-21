@@ -27,6 +27,17 @@ jobs:
           set -o pipefail
           ./build.sh 2>&1 | tee build.log
 
+      - name: Check universal binary
+        run: |
+          ARCHS_FOUND="$(lipo -archs "build/メモ帳.app/Contents/MacOS/Memocho")"
+          echo "$ARCHS_FOUND"
+          for ARCH in arm64 x86_64; do
+            case " $ARCHS_FOUND " in
+              *" $ARCH "*) ;;
+              *) echo "::error::$ARCH が入ってない" >&2; exit 1 ;;
+            esac
+          done
+
       - name: Zip app
         if: success()
         run: ditto -c -k --keepParent "build/メモ帳.app" Memocho.zip
