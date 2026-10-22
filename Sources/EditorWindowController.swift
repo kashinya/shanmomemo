@@ -34,6 +34,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private var caretLocation = 0
     private var lineCache: (location: Int, line: Int)?
     private var statusUpdateScheduled = false
+    private var classicAfterFullScreenExit = false
 
     // MARK: - 生成
 
@@ -91,8 +92,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         rootView.onLayout = { [weak self] in self?.layoutContent() }
         rootView.addSubview(scrollView)
         rootView.addSubview(statusBar)
-        verticalBar.attach(to: scrollView)
-        horizontalBar.attach(to: scrollView)
         window.initialFirstResponder = textView
     }
 
@@ -103,6 +102,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         scrollView.drawsBackground = true
         scrollView.backgroundColor = .textBackgroundColor
         scrollView.documentView = textView
+        // 本文の大きさが変わったのも拾うので、documentView を入れてから
+        verticalBar.attach(to: scrollView)
+        horizontalBar.attach(to: scrollView)
 
         textView.editor = self
         textView.delegate = self
@@ -244,8 +246,23 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     /// Windows 2000 風にする／戻す。ウィンドウの外側の大きさは変えない
     func applyClassicUI() {
         let classic = Settings.shared.classicUI
-        let frame = window.frame
+        // Mac の全画面のまま枠を付け外しすると全画面の状態が壊れるので、全画面を抜けてから切り替える
+        if window.styleMask.contains(.fullScreen) {
+            if !classicAfterFullScreenExit {
+                classicAfterFullScreenExit = true
+                window.toggleFullScreen(nil)
+            }
+            return
+        }
+        // Windows 2000 風（枠なし）のときは Mac の全画面にさせない
+        window.collectionBehavior = classic ? [.fullScreenNone] : []
+        let leavingClassic = window.isClassic && !classic
+        var frame = leavingClassic ? window.leaveClassicMaximize() : window.frame
         window.styleMask = classic ? [.closable, .miniaturizable, .resizable] : [.titled, .closable, .miniaturizable, .resizable]
+        if leavingClassic {
+            // 枠なしの間は画面のいちばん上まで行ける。Mac のタイトルバーがメニューバーの下に潜らんよう収める
+            frame = window.constrainFrameRect(frame, to: window.screen ?? NSScreen.main)
+        }
         window.setFrame(frame, display: false)
         window.hasShadow = true
         // Windows 2000 にダークモードは無いので、本文も白地に黒
@@ -903,5 +920,17 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func windowDidResize(_ notification: Notification) {
         titleBar.refresh()
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        guard classicAfterFullScreenExit else { return }
+        classicAfterFullScreenExit = false
+        applyClassicUI()
+        // 全画面を抜けると、全画面に入る前の presentationOptions に戻されるので掛け直す
+        AppDelegate.shared.applyPresentationOptions()
+    }
+
+    func windowDidFailToExitFullScreen(_ window: NSWindow) {
+        classicAfterFullScreenExit = false
     }
 }

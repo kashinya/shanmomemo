@@ -204,10 +204,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func toggleClassicUI(_ sender: Any?) {
         Settings.shared.classicUI.toggle()
+        // 先に Mac のメニューバーと Dock を戻す（ウィンドウを画面に収めるときに本当の大きさで測れるように）
+        applyPresentationOptions()
         for controller in controllers {
             controller.applyClassicUI()
         }
-        applyPresentationOptions()
     }
 
     @objc func toggleHideMacMenuBar(_ sender: Any?) {
@@ -217,7 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     /// Windows 2000 風のときは、このアプリが前にある間だけ Mac のメニューバーを自動で隠す。
     /// macOS の決まりで、メニューバーを隠すときは Dock も一緒に隠すことになる
-    private func applyPresentationOptions() {
+    func applyPresentationOptions() {
         let settings = Settings.shared
         NSApp.presentationOptions = settings.classicUI && settings.hideMacMenuBar ? [.autoHideDock, .autoHideMenuBar] : []
     }

@@ -109,6 +109,12 @@ final class EditorWindow: NSWindow {
     func forgetClassicMaximize() {
         restoreFrame = nil
     }
+
+    /// Windows 2000 風をやめるとき用: 最大化してたら元の大きさ、してなければ今の大きさ。最大化は忘れる
+    func leaveClassicMaximize() -> NSRect {
+        defer { restoreFrame = nil }
+        return restoreFrame ?? frame
+    }
 }
 
 /// ウィンドウの中身の土台。Windows 2000 風のときは外枠と本文まわりのへこみを描いて、外枠のドラッグで大きさを変える
@@ -170,9 +176,14 @@ final class EditorRootView: NSView {
         addCursorRect(NSRect(x: b.width - w, y: c, width: w, height: b.height - c * 2), cursor: .resizeLeftRight)
         addCursorRect(NSRect(x: c, y: 0, width: b.width - c * 2, height: w), cursor: .resizeUpDown)
         addCursorRect(NSRect(x: c, y: b.height - w, width: b.width - c * 2, height: w), cursor: .resizeUpDown)
-        for corner in [NSRect(x: 0, y: 0, width: c, height: c), NSRect(x: b.width - c, y: 0, width: c, height: c),
-                       NSRect(x: 0, y: b.height - c, width: c, height: c), NSRect(x: b.width - c, y: b.height - c, width: c, height: c)] {
-            addCursorRect(corner, cursor: .crosshair)
+        // 角は外枠の太さだけの L 字（中のタイトルバーやボタンに掛からんように）
+        for x in [0, b.width - c] {
+            addCursorRect(NSRect(x: x, y: 0, width: c, height: w), cursor: .crosshair)
+            addCursorRect(NSRect(x: x, y: b.height - w, width: c, height: w), cursor: .crosshair)
+        }
+        for y in [0, b.height - c] {
+            addCursorRect(NSRect(x: 0, y: y, width: w, height: c), cursor: .crosshair)
+            addCursorRect(NSRect(x: b.width - w, y: y, width: w, height: c), cursor: .crosshair)
         }
     }
 
@@ -181,11 +192,15 @@ final class EditorRootView: NSView {
         let edges = self.edges(at: convert(event.locationInWindow, from: nil))
         guard !edges.isEmpty else { return super.mouseDown(with: event) }
 
-        window.forgetClassicMaximize()
         let start = NSEvent.mouseLocation
         let startFrame = window.frame
         let minSize = window.minSize
+        var dragged = false
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]), next.type != .leftMouseUp {
+            if !dragged {
+                dragged = true
+                window.forgetClassicMaximize()   // クリックしただけでは忘れない
+            }
             // 画面の座標は下が y = 0
             let now = NSEvent.mouseLocation
             let dx = now.x - start.x, dy = now.y - start.y
