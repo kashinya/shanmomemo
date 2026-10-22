@@ -29,6 +29,25 @@ final class FixedLineHeightDelegate: NSObject, NSLayoutManagerDelegate {
     }
 }
 
+/// 本文の文字を描く NSLayoutManager。PC-9800 フォントのときはアンチエイリアスを切って、ドットのギザギザをそのまま出す。
+/// NSTextView の draw で切っても途中で戻されることがあるので、グリフを描くところで CGContext ごと切る。
+final class EditorLayoutManager: NSLayoutManager {
+    var antialiasesText = true
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        guard !antialiasesText, let context = NSGraphicsContext.current?.cgContext else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+        context.saveGState()
+        context.setAllowsAntialiasing(false)   // グラフィックス状態に含まれへんので、下で手で戻す
+        context.setShouldAntialias(false)
+        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        context.restoreGState()
+        context.setAllowsAntialiasing(true)
+    }
+}
+
 /// Windows 10 のメモ帳風ステータスバー:  行 1、列 1 | 100% | Windows (CRLF) | UTF-8
 final class StatusBarView: NSView {
     static let height: CGFloat = 22

@@ -14,7 +14,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private let scrollView: NSScrollView
     private let statusBar: StatusBarView
     private let textStorage: NSTextStorage
-    private let layoutManager: NSLayoutManager
+    private let layoutManager: EditorLayoutManager
     private let textContainer: NSTextContainer
     private let lineHeightDelegate = FixedLineHeightDelegate()
 
@@ -34,7 +34,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     override init() {
         // TextKit 1 で組む（大きいファイルと「折り返さない」表示が素直に動く）
         let storage = NSTextStorage()
-        let manager = NSLayoutManager()
+        let manager = EditorLayoutManager()
         let container = NSTextContainer(size: NSSize(width: 100, height: EditorWindowController.unlimited))
         storage.addLayoutManager(manager)
         manager.addTextContainer(container)
@@ -163,6 +163,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let size = max(2, base.pointSize * CGFloat(zoomPercent) / 100)
         let font = NSFont(descriptor: base.fontDescriptor, size: size) ?? base
         lineHeightDelegate.update(for: font, layoutManager: layoutManager)
+        layoutManager.antialiasesText = font.fontName != Settings.pc98FontName
+        textView.needsDisplay = true
 
         let style = EditorWindowController.paragraphStyle(for: font)
         textAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: NSColor.textColor]
