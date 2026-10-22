@@ -32,10 +32,18 @@ final class FixedLineHeightDelegate: NSObject, NSLayoutManagerDelegate {
 /// 本文の文字を描く NSLayoutManager。PC-9800 フォントのときはアンチエイリアスを切って、ドットのギザギザをそのまま出す。
 /// NSTextView の draw で切っても途中で戻されることがあるので、グリフを描くところで CGContext ごと切る。
 final class EditorLayoutManager: NSLayoutManager {
-    var antialiasesText = true
+    /// PC-9800 フォントの 1 ドットの大きさ（pt、1/16 em）。nil = 普通に描く
+    var pixelFontDotSize: CGFloat?
 
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        guard !antialiasesText, let context = NSGraphicsContext.current?.cgContext else {
+        // 1 ドットが画面の 1 ピクセルより小さいと、アンチエイリアスなしでは線ごと消える（三が二になる）ので、そのときは切らない。
+        // 描くたびに測るので、Retina と普通の画面のあいだでウィンドウを動かしても合う
+        guard let dot = pixelFontDotSize, let context = NSGraphicsContext.current?.cgContext else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+        let devicePixels = context.convertToDeviceSpace(CGSize(width: dot, height: dot))
+        guard min(abs(devicePixels.width), abs(devicePixels.height)) >= 0.99 else {
             super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
             return
         }

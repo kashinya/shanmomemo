@@ -163,7 +163,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let size = max(2, base.pointSize * CGFloat(zoomPercent) / 100)
         let font = NSFont(descriptor: base.fontDescriptor, size: size) ?? base
         lineHeightDelegate.update(for: font, layoutManager: layoutManager)
-        layoutManager.antialiasesText = font.fontName != Settings.pc98FontName
+        layoutManager.pixelFontDotSize = font.fontName == Settings.pc98FontName ? font.pointSize / 16 : nil
         textView.needsDisplay = true
 
         let style = EditorWindowController.paragraphStyle(for: font)
