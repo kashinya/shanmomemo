@@ -185,6 +185,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @objc func toggleMonospaceFont(_ sender: Any?) {
         Settings.shared.monospaceMode.toggle()
         applyFontToAll()
+        // フォントパネルが開いてたら表示を合わせる（ずれたままやと、次の変更が違うフォントに掛かる）
+        if NSFontPanel.sharedFontPanelExists {
+            NSFontManager.shared.setSelectedFont(Settings.shared.editorFont, isMultiple: false)
+        }
     }
 
     @objc func setAppearanceMode(_ sender: Any?) {

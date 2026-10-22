@@ -58,7 +58,7 @@ PC98_FONT_SHA256="ef8a08868d2d279aac1f3d646899c574775b1b8d692de54f1de08722eded73
 if [ -z "${NO_PC98_FONT:-}" ] && [ ! -f "$PC98_FONT" ]; then
   echo "==> PC-9800 フォントを取ってくる: $PC98_FONT_URL"
   mkdir -p "$FONT_DIR"
-  if curl -fsSL --retry 2 -o "$PC98_FONT.part" "$PC98_FONT_URL" &&
+  if curl -fsSL --connect-timeout 15 --max-time 180 --retry 2 -o "$PC98_FONT.part" "$PC98_FONT_URL" &&
      [ "$(shasum -a 256 "$PC98_FONT.part" | cut -d ' ' -f 1)" = "$PC98_FONT_SHA256" ]; then
     mv "$PC98_FONT.part" "$PC98_FONT"
   else
@@ -66,13 +66,16 @@ if [ -z "${NO_PC98_FONT:-}" ] && [ ! -f "$PC98_FONT" ]; then
     echo "    取れんかった（通信エラーか、中身が前と違う）。等幅フォントは Osaka−等幅 か Menlo で代わりにする" >&2
   fi
 fi
+shopt -s nocaseglob   # Windows から持ってきた FOO.TTF も拾う
 for FONT in "$FONT_DIR"/*.ttf "$FONT_DIR"/*.otf; do
   [ -f "$FONT" ] || continue
   if [ -n "${NO_PC98_FONT:-}" ] && [ "$FONT" = "$PC98_FONT" ]; then continue; fi
   mkdir -p "$APP/Contents/Resources/Fonts"
-  cp "$FONT" "$APP/Contents/Resources/Fonts/"
+  # -X: Finder 情報などの拡張属性は持ち込まない（あると codesign が通らん）
+  cp -X "$FONT" "$APP/Contents/Resources/Fonts/"
   echo "==> フォントを埋め込み: $(basename "$FONT")"
 done
+shopt -u nocaseglob
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
