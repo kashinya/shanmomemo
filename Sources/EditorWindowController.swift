@@ -817,15 +817,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func windowWillClose(_ notification: Notification) {
-        Settings.shared.windowFrame = window.frame
         AppDelegate.shared.controllerWillClose(self)
-    }
-
-    func windowDidMove(_ notification: Notification) {
-        Settings.shared.windowFrame = window.frame
-    }
-
-    func windowDidEndLiveResize(_ notification: Notification) {
-        Settings.shared.windowFrame = window.frame
     }
 }

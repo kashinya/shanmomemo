@@ -63,7 +63,6 @@ final class Settings {
         static let fontSize = "FontSize"
         static let wordWrap = "WordWrap"
         static let statusBar = "StatusBar"
-        static let windowFrame = "WindowFrame"
         static let matchCase = "FindMatchCase"
         static let wrapAround = "FindWrapAround"
         static let tabWidth = "TabWidth"
@@ -161,21 +160,5 @@ final class Settings {
     var tabWidth: Int {
         let width = defaults.integer(forKey: Key.tabWidth)
         return (1...32).contains(width) ? width : 8
-    }
-
-    /// 最後に閉じた（動かした）ウィンドウの位置と大きさ
-    var windowFrame: NSRect? {
-        get {
-            guard let string = defaults.string(forKey: Key.windowFrame) else { return nil }
-            let rect = NSRectFromString(string)
-            return (rect.width >= 200 && rect.height >= 150) ? rect : nil
-        }
-        set {
-            if let rect = newValue {
-                defaults.set(NSStringFromRect(rect), forKey: Key.windowFrame)
-            } else {
-                defaults.removeObject(forKey: Key.windowFrame)
-            }
-        }
     }
 }
