@@ -41,6 +41,11 @@ jobs:
             esac
           done
 
+      - name: Check icon
+        run: |
+          iconutil --convert iconset --output "$RUNNER_TEMP/AppIcon.iconset" Resources/AppIcon.icns
+          ls "$RUNNER_TEMP/AppIcon.iconset"
+
       - name: Zip app
         if: success()
         run: ditto -c -k --keepParent "build/メモ帳.app" Memocho.zip
