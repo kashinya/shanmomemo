@@ -65,8 +65,23 @@ final class StatusBarView: NSView {
     private let lineEndingLabel = StatusBarView.makeLabel()
     private let encodingLabel = StatusBarView.makeLabel()
 
-    /// 左から 位置 / ズーム / 改行 / 文字コード の欄幅（右寄せで並べる）
-    private let columnWidths: [CGFloat] = [160, 60, 130, 140]
+    private static let labelFont = NSFont.systemFont(ofSize: 11)
+
+    /// 左から 位置 / ズーム / 改行 / 文字コード の欄幅（右寄せで並べる）。
+    /// それぞれ出しうるいちばん長い表示に合わせて詰めてあるので、本文 500pt 幅のウィンドウでも左はじにロゴが入る
+    private let columnWidths: [CGFloat] = {
+        let attributes: [NSAttributedString.Key: Any] = [.font: StatusBarView.labelFont]
+        func width(_ samples: [String]) -> CGFloat {
+            let widest = samples.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0
+            return ceil(widest) + 20   // 区切り線からの余白 10 + 右の余白 4 + ラベル内側の余白 6
+        }
+        return [
+            width(["行 99999、列 9999"]),
+            width(["500%"]),
+            width(LineEnding.allCases.map { $0.displayName }),
+            width(TextEncoding.allCases.map { $0.displayName }),
+        ]
+    }()
 
     /// 左はじの SHANMO ロゴ（Resources/StatusLogo.png）
     private let logoView: NSImageView? = {
@@ -136,7 +151,7 @@ final class StatusBarView: NSView {
 
     private static func makeLabel() -> NSTextField {
         let label = NSTextField(labelWithString: "")
-        label.font = NSFont.systemFont(ofSize: 11)
+        label.font = StatusBarView.labelFont
         label.textColor = .secondaryLabelColor
         label.lineBreakMode = .byTruncatingTail
         return label

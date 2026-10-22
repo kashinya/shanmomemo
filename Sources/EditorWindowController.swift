@@ -39,7 +39,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         storage.addLayoutManager(manager)
         manager.addTextContainer(container)
 
-        let contentRect = NSRect(x: 0, y: 0, width: 760, height: 520)
+        let contentRect = NSRect(x: 0, y: 0, width: 500, height: 500)
         let newWindow = NSWindow(contentRect: contentRect,
                                  styleMask: [.titled, .closable, .miniaturizable, .resizable],
                                  backing: .buffered,

@@ -147,8 +147,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                   NSScreen.screens.contains(where: { $0.visibleFrame.intersects(saved) }) {
             window.setFrame(saved, display: false)
         } else {
-            window.center()
+            window.setFrame(defaultFrame(for: window), display: false)
         }
+    }
+
+    /// 初めて開くときの位置と大きさ。移植元のメモ帳と同じで、画面の左から 260pt・上から 354pt に本文 500×500
+    private func defaultFrame(for window: NSWindow) -> NSRect {
+        let size = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 500, height: 500)).size
+        guard let screen = NSScreen.main ?? NSScreen.screens.first else {
+            return NSRect(origin: .zero, size: size)
+        }
+        let full = screen.frame
+        let visible = screen.visibleFrame
+        var frame = NSRect(x: full.minX + 260, y: full.maxY - 354 - size.height, width: size.width, height: size.height)
+        // 小さい画面ではみ出すときは、見えるところに収める
+        frame.origin.x = max(visible.minX, min(frame.minX, visible.maxX - frame.width))
+        frame.origin.y = max(visible.minY, min(frame.minY, visible.maxY - frame.height))
+        return frame
     }
 
     // MARK: - メニュー（ウィンドウが無いときや、アプリ全体の設定）
