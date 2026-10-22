@@ -26,8 +26,9 @@ enum MainMenu {
 
         // ファイル
         let fileMenu = NSMenu(title: "ファイル")
-        fileMenu.addItem(item("新規", #selector(EditorWindowController.fileNew(_:)), "n"))
-        fileMenu.addItem(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n", [.command, .shift]))
+        fileMenu.addItem(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n"))
+        // Windows の Ctrl+Shift+N の癖で ⇧⌘N を押しても同じ（メニューには出さない）
+        fileMenu.addItem(hidden(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n", [.command, .shift])))
         fileMenu.addItem(item("開く…", #selector(EditorWindowController.fileOpen(_:)), "o"))
         let reopenItem = NSMenuItem(title: "文字コードを指定して開き直す", action: nil, keyEquivalent: "")
         reopenItem.submenu = encodingMenu(title: "文字コードを指定して開き直す",

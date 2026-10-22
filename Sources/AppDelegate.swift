@@ -153,12 +153,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: - メニュー（ウィンドウが無いときや、アプリ全体の設定）
 
+    /// ⌘N。今のウィンドウの中身は入れ替えず、いつも新しいウィンドウを開く
     @objc func fileNewWindow(_ sender: Any?) {
-        newWindow()
-    }
-
-    /// ウィンドウが 1 枚も無いときだけここに来る
-    @objc func fileNew(_ sender: Any?) {
         newWindow()
     }
 

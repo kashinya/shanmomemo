@@ -439,18 +439,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     // MARK: - メニューの処理（ファイル）
 
-    @objc func fileNew(_ sender: Any?) {
-        guard confirmDiscardIfNeeded() else { return }
-        replaceAllText(with: "")
-        fileURL = nil
-        encoding = .utf8
-        lineEnding = .lf
-        isDirty = false
-        caretLocation = 0
-        updateTitle()
-        updateStatusNow()
-    }
-
     @objc func fileOpen(_ sender: Any?) {
         guard confirmDiscardIfNeeded() else { return }
         guard let choice = FilePanels.runOpen() else { return }
