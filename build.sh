@@ -47,6 +47,7 @@ done
 
 lipo -create -output "$APP/Contents/MacOS/$EXEC_NAME" "${BINARIES[@]}"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+cp Resources/StatusLogo.png "$APP/Contents/Resources/StatusLogo.png"
 
 # 等幅フォントモード用の PC-9800 フォント（retro-type.com の配布物）。
 # 配布条件が書かれてないのでリポジトリには入れず、ビルドのときに落としてアプリに埋め込む。

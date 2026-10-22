@@ -41,6 +41,17 @@ final class StatusBarView: NSView {
     /// 左から 位置 / ズーム / 改行 / 文字コード の欄幅（右寄せで並べる）
     private let columnWidths: [CGFloat] = [160, 60, 130, 140]
 
+    /// 左はじの SHANMO ロゴ（Resources/StatusLogo.png）
+    private let logoView: NSImageView? = {
+        guard let image = NSImage(named: "StatusLogo"), image.size.height > 0 else { return nil }
+        let height: CGFloat = 16
+        let view = NSImageView(image: image)
+        view.imageScaling = .scaleProportionallyUpOrDown
+        view.frame = NSRect(x: 8, y: 3, width: (height * image.size.width / image.size.height).rounded(), height: height)
+        view.autoresizingMask = [.maxXMargin]
+        return view
+    }()
+
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         let labels = [positionLabel, zoomLabel, lineEndingLabel, encodingLabel]
@@ -52,6 +63,17 @@ final class StatusBarView: NSView {
             label.autoresizingMask = [.minXMargin]
             addSubview(label)
         }
+        if let logoView = logoView {
+            addSubview(logoView)
+            updateLogoVisibility()
+        }
+    }
+
+    /// ウィンドウが狭くて欄とぶつかるときはロゴを隠す
+    private func updateLogoVisibility() {
+        guard let logoView = logoView else { return }
+        let columnsLeft = bounds.width - columnWidths.reduce(0, +)
+        logoView.isHidden = logoView.frame.maxX + 8 > columnsLeft
     }
 
     required init?(coder: NSCoder) {
@@ -62,6 +84,7 @@ final class StatusBarView: NSView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
+        updateLogoVisibility()
         needsDisplay = true
     }
 
