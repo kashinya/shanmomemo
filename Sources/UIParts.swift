@@ -208,7 +208,7 @@ final class PrintTextView: NSTextView {
     }
 
     static func make(text: String, title: String, width: CGFloat) -> PrintTextView {
-        let font = Settings.shared.font
+        let font = Settings.shared.editorFont
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .paragraphStyle: EditorWindowController.paragraphStyle(for: font),

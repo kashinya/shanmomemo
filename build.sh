@@ -47,6 +47,32 @@ done
 
 lipo -create -output "$APP/Contents/MacOS/$EXEC_NAME" "${BINARIES[@]}"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+
+# 等幅フォントモード用の PC-9800 フォント（retro-type.com の配布物）。
+# 配布条件が書かれてないのでリポジトリには入れず、ビルドのときに落としてアプリに埋め込む。
+# 要らんときは NO_PC98_FONT=1 ./build.sh。Resources/Fonts/ に置いた .ttf / .otf はどれも埋め込まれる。
+FONT_DIR="Resources/Fonts"
+PC98_FONT="$FONT_DIR/pc-9800.ttf"
+PC98_FONT_URL="https://retro-type.com/PC98/font/pc-9800.ttf"
+PC98_FONT_SHA256="ef8a08868d2d279aac1f3d646899c574775b1b8d692de54f1de08722eded7333"
+if [ -z "${NO_PC98_FONT:-}" ] && [ ! -f "$PC98_FONT" ]; then
+  echo "==> PC-9800 フォントを取ってくる: $PC98_FONT_URL"
+  mkdir -p "$FONT_DIR"
+  if curl -fsSL --retry 2 -o "$PC98_FONT.part" "$PC98_FONT_URL" &&
+     [ "$(shasum -a 256 "$PC98_FONT.part" | cut -d ' ' -f 1)" = "$PC98_FONT_SHA256" ]; then
+    mv "$PC98_FONT.part" "$PC98_FONT"
+  else
+    rm -f "$PC98_FONT.part"
+    echo "    取れんかった（通信エラーか、中身が前と違う）。等幅フォントは Osaka−等幅 か Menlo で代わりにする" >&2
+  fi
+fi
+for FONT in "$FONT_DIR"/*.ttf "$FONT_DIR"/*.otf; do
+  [ -f "$FONT" ] || continue
+  if [ -n "${NO_PC98_FONT:-}" ] && [ "$FONT" = "$PC98_FONT" ]; then continue; fi
+  mkdir -p "$APP/Contents/Resources/Fonts"
+  cp "$FONT" "$APP/Contents/Resources/Fonts/"
+  echo "==> フォントを埋め込み: $(basename "$FONT")"
+done
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 cat > "$APP/Contents/Info.plist" <<PLIST

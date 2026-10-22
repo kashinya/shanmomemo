@@ -15,6 +15,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false   // 「タブで開く」系をアプリごと封印
+        EmbeddedFonts.register()                        // メニューを作る前に（等幅フォントの名前が変わる）
+        NSApp.appearance = Settings.shared.appearance.appearance
         NSApp.mainMenu = MainMenu.make()
         // フォントパネルの変更は本文ビューやなくて、ここで受けて全ウィンドウに反映する
         NSFontManager.shared.action = #selector(AppDelegate.fontPanelChangedFont(_:))
@@ -180,15 +182,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    @objc func toggleMonospaceFont(_ sender: Any?) {
+        Settings.shared.monospaceMode.toggle()
+        applyFontToAll()
+    }
+
+    @objc func setAppearanceMode(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem, let mode = AppearanceMode(rawValue: item.tag) else { return }
+        Settings.shared.appearance = mode
+        NSApp.appearance = mode.appearance
+    }
+
     @objc func showFontPanel(_ sender: Any?) {
         let fontManager = NSFontManager.shared
-        fontManager.setSelectedFont(Settings.shared.font, isMultiple: false)
+        fontManager.setSelectedFont(Settings.shared.editorFont, isMultiple: false)
         fontManager.orderFrontFontPanel(sender)
     }
 
+    /// フォントパネルで選んだら、それを使う（等幅フォントモードは切る）
     @objc func fontPanelChangedFont(_ sender: Any?) {
         let fontManager = (sender as? NSFontManager) ?? NSFontManager.shared
-        Settings.shared.font = fontManager.convert(Settings.shared.font)
+        Settings.shared.font = fontManager.convert(Settings.shared.editorFont)
+        Settings.shared.monospaceMode = false
+        applyFontToAll()
+    }
+
+    private func applyFontToAll() {
         for controller in controllers {
             controller.applyFont()
             controller.updateStatusNow()
@@ -215,6 +234,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.state = Settings.shared.wordWrap ? .on : .off
         } else if menuItem.action == #selector(toggleStatusBar(_:)) {
             menuItem.state = Settings.shared.showStatusBar ? .on : .off
+        } else if menuItem.action == #selector(toggleMonospaceFont(_:)) {
+            menuItem.state = Settings.shared.monospaceMode ? .on : .off
+        } else if menuItem.action == #selector(setAppearanceMode(_:)) {
+            menuItem.state = menuItem.tag == Settings.shared.appearance.rawValue ? .on : .off
         }
         return true
     }

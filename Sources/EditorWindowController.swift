@@ -159,7 +159,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func applyFont() {
-        let base = Settings.shared.font
+        let base = Settings.shared.editorFont
         let size = max(2, base.pointSize * CGFloat(zoomPercent) / 100)
         let font = NSFont(descriptor: base.fontDescriptor, size: size) ?? base
         lineHeightDelegate.update(for: font, layoutManager: layoutManager)

@@ -72,6 +72,8 @@ enum MainMenu {
         // 書式
         let formatMenu = NSMenu(title: "書式")
         formatMenu.addItem(item("右端で折り返す", #selector(AppDelegate.toggleWordWrap(_:))))
+        formatMenu.addItem(item(Settings.hasPC98Font ? "等幅フォント（PC-9800）" : "等幅フォント",
+                                #selector(AppDelegate.toggleMonospaceFont(_:))))
         formatMenu.addItem(item("フォント…", #selector(AppDelegate.showFontPanel(_:)), "t"))
         formatMenu.addItem(NSMenuItem.separator())
         let saveEncodingItem = NSMenuItem(title: "保存時の文字コード", action: nil, keyEquivalent: "")
@@ -101,6 +103,13 @@ enum MainMenu {
         zoomItem.submenu = zoomMenu
         viewMenu.addItem(zoomItem)
         viewMenu.addItem(item("ステータス バー", #selector(AppDelegate.toggleStatusBar(_:))))
+        let appearanceItem = NSMenuItem(title: "外観", action: nil, keyEquivalent: "")
+        let appearanceMenu = NSMenu(title: "外観")
+        for mode in AppearanceMode.allCases {
+            appearanceMenu.addItem(item(mode.displayName, #selector(AppDelegate.setAppearanceMode(_:)), tag: mode.rawValue))
+        }
+        appearanceItem.submenu = appearanceMenu
+        viewMenu.addItem(appearanceItem)
         add(viewMenu, to: mainMenu)
 
         // ウインドウ
