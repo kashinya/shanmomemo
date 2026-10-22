@@ -9,10 +9,16 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private static let completeSelector = NSSelectorFromString("complete:")
     private static let cancelSelector = NSSelectorFromString("cancelOperation:")
 
-    let window: NSWindow
+    let window: EditorWindow
     let textView: EditorTextView
     private let scrollView: NSScrollView
     private let statusBar: StatusBarView
+    private let rootView = EditorRootView()
+    // Windows 2000 風のときだけ出す部品
+    private let titleBar = ClassicTitleBar()
+    private let menuBar = ClassicMenuBar()
+    private let verticalBar = ClassicScrollBar(orientation: .vertical)
+    private let horizontalBar = ClassicScrollBar(orientation: .horizontal)
     private let textStorage: NSTextStorage
     private let layoutManager: EditorLayoutManager
     private let textContainer: NSTextContainer
@@ -40,10 +46,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         manager.addTextContainer(container)
 
         let contentRect = NSRect(x: 0, y: 0, width: 500, height: 500)
-        let newWindow = NSWindow(contentRect: contentRect,
-                                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                                 backing: .buffered,
-                                 defer: false)
+        let newWindow = EditorWindow(contentRect: contentRect,
+                                     styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                     backing: .buffered,
+                                     defer: false)
 
         let barHeight = StatusBarView.height
         let scroll = NSScrollView(frame: NSRect(x: 0, y: barHeight,
@@ -67,6 +73,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         setUpTextView()
         applyFont()
         applyWordWrap()
+        applyClassicUI()
         applyStatusBarVisibility()
         updateTitle()
     }
@@ -78,13 +85,14 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         window.minSize = NSSize(width: 360, height: 200)
         window.delegate = self
 
-        if let content = window.contentView {
-            content.autoresizesSubviews = true
-            scrollView.autoresizingMask = [.width, .height]
-            statusBar.autoresizingMask = [.width, .maxYMargin]
-            content.addSubview(scrollView)
-            content.addSubview(statusBar)
-        }
+        // 中身の並べ方は layoutContent() でまとめて決める
+        window.contentView = rootView
+        rootView.autoresizesSubviews = true
+        rootView.onLayout = { [weak self] in self?.layoutContent() }
+        rootView.addSubview(scrollView)
+        rootView.addSubview(statusBar)
+        verticalBar.attach(to: scrollView)
+        horizontalBar.attach(to: scrollView)
         window.initialFirstResponder = textView
     }
 
@@ -163,6 +171,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let size = max(2, base.pointSize * CGFloat(zoomPercent) / 100)
         let font = NSFont(descriptor: base.fontDescriptor, size: size) ?? base
         lineHeightDelegate.update(for: font, layoutManager: layoutManager)
+        scrollView.verticalLineScroll = max(1, lineHeightDelegate.lineHeight)   // スクロールバーの矢印で 1 行ずつ
         layoutManager.pixelFontDotSize = font.fontName == Settings.pc98FontName ? font.pointSize / 16 : nil
         textView.needsDisplay = true
 
@@ -178,6 +187,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func applyWordWrap() {
         let size = scrollView.contentSize
+        let classic = Settings.shared.classicUI
         if Settings.shared.wordWrap {
             scrollView.hasHorizontalScroller = false
             textView.isHorizontallyResizable = false
@@ -187,13 +197,14 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             let inset = textView.textContainerInset.width * 2
             textContainer.size = NSSize(width: max(0, size.width - inset), height: EditorWindowController.unlimited)
         } else {
-            scrollView.hasHorizontalScroller = true
+            scrollView.hasHorizontalScroller = !classic   // Windows 2000 風のときは自前のスクロールバー
             textView.isHorizontallyResizable = true
             // ウィンドウを狭めても本文の幅は縮めない（縮めると長い行の右側にスクロールできなくなる）
             textView.autoresizingMask = []
             textContainer.widthTracksTextView = false
             textContainer.size = NSSize(width: EditorWindowController.unlimited, height: EditorWindowController.unlimited)
         }
+        layoutContent()
         updateTextViewMinSize()
         textView.sizeToFit()
         textView.scrollRangeToVisible(textView.selectedRange())
@@ -224,16 +235,76 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func applyStatusBarVisibility() {
-        guard let content = window.contentView else { return }
-        let show = Settings.shared.showStatusBar
-        let bounds = content.bounds
-        let barHeight = show ? StatusBarView.height : 0
-        statusBar.isHidden = !show
-        statusBar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: StatusBarView.height)
-        scrollView.frame = NSRect(x: 0, y: barHeight, width: bounds.width, height: bounds.height - barHeight)
-        if show {
+        layoutContent()
+        if Settings.shared.showStatusBar {
             updateStatusNow()
         }
+    }
+
+    /// Windows 2000 風にする／戻す。ウィンドウの外側の大きさは変えない
+    func applyClassicUI() {
+        let classic = Settings.shared.classicUI
+        let frame = window.frame
+        window.styleMask = classic ? [.closable, .miniaturizable, .resizable] : [.titled, .closable, .miniaturizable, .resizable]
+        window.setFrame(frame, display: false)
+        window.hasShadow = true
+        // Windows 2000 にダークモードは無いので、本文も白地に黒
+        window.appearance = classic ? NSAppearance(named: .aqua) : nil
+        window.backgroundColor = classic ? Classic.face : .windowBackgroundColor
+
+        rootView.classic = classic
+        for view in [titleBar, menuBar, verticalBar, horizontalBar] as [NSView] {
+            if !classic {
+                view.removeFromSuperview()
+            } else if view.superview == nil {
+                rootView.addSubview(view)
+            }
+        }
+        if classic {
+            menuBar.reload()
+        }
+        scrollView.hasVerticalScroller = !classic
+        scrollView.hasHorizontalScroller = !classic && !Settings.shared.wordWrap
+        statusBar.classic = classic
+        layoutContent()
+        updateTitle()
+        window.makeFirstResponder(textView)
+    }
+
+    /// 本文・ステータスバー・（Windows 2000 風のときは）タイトルバー・メニューバー・スクロールバーを並べる。上が y = 0
+    private func layoutContent() {
+        let bounds = rootView.bounds
+        let showStatus = Settings.shared.showStatusBar
+        let statusHeight = showStatus ? StatusBarView.height : 0
+        statusBar.isHidden = !showStatus
+
+        guard Settings.shared.classicUI else {
+            rootView.clientRect = .zero
+            statusBar.frame = NSRect(x: 0, y: bounds.height - StatusBarView.height, width: bounds.width, height: StatusBarView.height)
+            scrollView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - statusHeight))
+            return
+        }
+
+        let border = Classic.frameWidth
+        let innerWidth = max(0, bounds.width - border * 2)
+        titleBar.frame = NSRect(x: border, y: border, width: innerWidth, height: Classic.captionHeight)
+        menuBar.frame = NSRect(x: border, y: titleBar.frame.maxY + 1, width: innerWidth, height: Classic.menuBarHeight)
+        statusBar.frame = NSRect(x: border, y: bounds.height - border - StatusBarView.height, width: innerWidth, height: StatusBarView.height)
+
+        // 本文のまわりは 2pt のへこみ（Windows の WS_EX_CLIENTEDGE）
+        let client = NSRect(x: border, y: menuBar.frame.maxY, width: innerWidth,
+                            height: max(0, bounds.height - border - statusHeight - menuBar.frame.maxY))
+        rootView.clientRect = client
+        let inner = client.insetBy(dx: 2, dy: 2)
+        let barSize = Classic.scrollBarSize
+        let showHorizontal = !Settings.shared.wordWrap
+        let text = NSRect(x: inner.minX, y: inner.minY, width: max(0, inner.width - barSize),
+                          height: max(0, inner.height - (showHorizontal ? barSize : 0)))
+        scrollView.frame = text
+        verticalBar.frame = NSRect(x: text.maxX, y: text.minY, width: barSize, height: text.height)
+        horizontalBar.isHidden = !showHorizontal
+        horizontalBar.frame = NSRect(x: text.minX, y: text.maxY, width: text.width, height: barSize)
+        rootView.needsDisplay = true
     }
 
     func zoom(by delta: Int) {
@@ -262,6 +333,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         window.title = (isDirty ? "*" : "") + displayName + " - " + AppInfo.name
         window.representedURL = fileURL
         window.isDocumentEdited = isDirty
+        titleBar.refresh()
     }
 
     private func setDirty(_ dirty: Bool) {
@@ -818,5 +890,18 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func windowWillClose(_ notification: Notification) {
         AppDelegate.shared.controllerWillClose(self)
+    }
+
+    // Windows 2000 風のタイトルバーは、アクティブかどうかで色が変わり、最大化でボタンの絵が変わる
+    func windowDidBecomeKey(_ notification: Notification) {
+        titleBar.refresh()
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        titleBar.refresh()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        titleBar.refresh()
     }
 }

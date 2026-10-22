@@ -68,6 +68,8 @@ final class Settings {
         static let tabWidth = "TabWidth"
         static let monospaceMode = "MonospaceMode"
         static let appearance = "Appearance"
+        static let classicUI = "ClassicUI"
+        static let hideMacMenuBar = "HideMacMenuBar"
     }
 
     private init() {
@@ -79,6 +81,8 @@ final class Settings {
             Key.tabWidth: 8,
             Key.monospaceMode: false,
             Key.appearance: AppearanceMode.system.rawValue,
+            Key.classicUI: false,
+            Key.hideMacMenuBar: true,
         ])
     }
 
@@ -134,6 +138,18 @@ final class Settings {
     var appearance: AppearanceMode {
         get { return AppearanceMode(rawValue: defaults.integer(forKey: Key.appearance)) ?? .system }
         set { defaults.set(newValue.rawValue, forKey: Key.appearance) }
+    }
+
+    /// ［表示］→［Windows 2000 風］
+    var classicUI: Bool {
+        get { return defaults.bool(forKey: Key.classicUI) }
+        set { defaults.set(newValue, forKey: Key.classicUI) }
+    }
+
+    /// Windows 2000 風のとき、このアプリを使ってる間は Mac のメニューバー（と Dock）を自動で隠す
+    var hideMacMenuBar: Bool {
+        get { return defaults.bool(forKey: Key.hideMacMenuBar) }
+        set { defaults.set(newValue, forKey: Key.hideMacMenuBar) }
     }
 
     var wordWrap: Bool {

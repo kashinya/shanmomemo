@@ -41,6 +41,8 @@ enum MainMenu {
         fileMenu.addItem(item("印刷…", #selector(EditorWindowController.filePrint(_:)), "p"))
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(item("閉じる", #selector(NSWindow.performClose(_:)), "w"))
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(item("\(name)の終了", #selector(NSApplication.terminate(_:))))
         add(fileMenu, to: mainMenu)
 
         // 編集
@@ -111,6 +113,9 @@ enum MainMenu {
         }
         appearanceItem.submenu = appearanceMenu
         viewMenu.addItem(appearanceItem)
+        viewMenu.addItem(NSMenuItem.separator())
+        viewMenu.addItem(item("Windows 2000 風", #selector(AppDelegate.toggleClassicUI(_:))))
+        viewMenu.addItem(item("Mac のメニューバーと Dock を隠す", #selector(AppDelegate.toggleHideMacMenuBar(_:))))
         add(viewMenu, to: mainMenu)
 
         // ウインドウ

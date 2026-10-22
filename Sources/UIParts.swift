@@ -124,6 +124,19 @@ final class StatusBarView: NSView {
 
     override var isOpaque: Bool { return true }
 
+    /// 上が y = 0（ラベルとロゴは上下の真ん中なので、どっち向きでも同じ位置）
+    override var isFlipped: Bool { return true }
+
+    /// Windows 2000 風: ボタン色の地に、へこんだ欄を並べる
+    var classic = false {
+        didSet {
+            for label in [positionLabel, zoomLabel, lineEndingLabel, encodingLabel] {
+                label.textColor = classic ? .black : .secondaryLabelColor
+            }
+            needsDisplay = true
+        }
+    }
+
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         updateLogoVisibility()
@@ -131,14 +144,25 @@ final class StatusBarView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        if classic {
+            Classic.face.setFill()
+            bounds.fill()
+            var x = bounds.width
+            for width in columnWidths.reversed() {
+                x -= width
+                Classic.drawEdge(NSRect(x: x + 2, y: 2, width: width - 2, height: bounds.height - 2), Classic.thinSunken)
+            }
+            Classic.drawEdge(NSRect(x: 0, y: 2, width: max(0, x), height: bounds.height - 2), Classic.thinSunken)
+            return
+        }
         NSColor.windowBackgroundColor.setFill()
         bounds.fill()
         NSColor.separatorColor.setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
         var x = bounds.width
         for width in columnWidths.reversed() {
             x -= width
-            NSRect(x: x, y: 4, width: 1, height: bounds.height - 9).fill()
+            NSRect(x: x, y: 5, width: 1, height: bounds.height - 9).fill()
         }
     }
 

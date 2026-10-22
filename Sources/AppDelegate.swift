@@ -23,6 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        applyPresentationOptions()
         // 念のため。起動時に何も開かれへんかったら「無題」を 1 枚出す
         DispatchQueue.main.async {
             if self.controllers.isEmpty {
@@ -150,7 +151,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     /// 1 枚目のウィンドウの位置と大きさ。移植元のメモ帳と同じく位置は覚えず、毎回ここ（画面の左から 260pt・上から 352pt に本文 500×500）
     private func defaultFrame(for window: NSWindow) -> NSRect {
-        let size = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 500, height: 500)).size
+        // Windows 2000 風（枠なし）でも外側の大きさは同じにする
+        let size = NSWindow.frameRect(forContentRect: NSRect(x: 0, y: 0, width: 500, height: 500),
+                                      styleMask: [.titled, .closable, .miniaturizable, .resizable]).size
         guard let screen = NSScreen.main ?? NSScreen.screens.first else {
             return NSRect(origin: .zero, size: size)
         }
@@ -197,6 +200,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         if NSFontPanel.sharedFontPanelExists {
             NSFontManager.shared.setSelectedFont(Settings.shared.editorFont, isMultiple: false)
         }
+    }
+
+    @objc func toggleClassicUI(_ sender: Any?) {
+        Settings.shared.classicUI.toggle()
+        for controller in controllers {
+            controller.applyClassicUI()
+        }
+        applyPresentationOptions()
+    }
+
+    @objc func toggleHideMacMenuBar(_ sender: Any?) {
+        Settings.shared.hideMacMenuBar.toggle()
+        applyPresentationOptions()
+    }
+
+    /// Windows 2000 風のときは、このアプリが前にある間だけ Mac のメニューバーを自動で隠す。
+    /// macOS の決まりで、メニューバーを隠すときは Dock も一緒に隠すことになる
+    private func applyPresentationOptions() {
+        let settings = Settings.shared
+        NSApp.presentationOptions = settings.classicUI && settings.hideMacMenuBar ? [.autoHideDock, .autoHideMenuBar] : []
     }
 
     @objc func setAppearanceMode(_ sender: Any?) {
@@ -250,6 +273,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.state = Settings.shared.monospaceMode ? .on : .off
         } else if menuItem.action == #selector(setAppearanceMode(_:)) {
             menuItem.state = menuItem.tag == Settings.shared.appearance.rawValue ? .on : .off
+        } else if menuItem.action == #selector(toggleClassicUI(_:)) {
+            menuItem.state = Settings.shared.classicUI ? .on : .off
+        } else if menuItem.action == #selector(toggleHideMacMenuBar(_:)) {
+            menuItem.state = Settings.shared.hideMacMenuBar ? .on : .off
+            return Settings.shared.classicUI
         }
         return true
     }
