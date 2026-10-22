@@ -202,6 +202,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    @objc func setLineSpacing(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem, Settings.lineSpacingChoices.contains(item.tag) else { return }
+        Settings.shared.lineSpacingPercent = item.tag
+        applyFontToAll()
+    }
+
     @objc func toggleClassicUI(_ sender: Any?) {
         Settings.shared.classicUI.toggle()
         // 先に Mac のメニューバーと Dock を戻す（ウィンドウを画面に収めるときに本当の大きさで測れるように）
@@ -274,6 +280,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.state = Settings.shared.monospaceMode ? .on : .off
         } else if menuItem.action == #selector(setAppearanceMode(_:)) {
             menuItem.state = menuItem.tag == Settings.shared.appearance.rawValue ? .on : .off
+        } else if menuItem.action == #selector(setLineSpacing(_:)) {
+            menuItem.state = menuItem.tag == Settings.shared.lineSpacingPercent ? .on : .off
         } else if menuItem.action == #selector(toggleClassicUI(_:)) {
             menuItem.state = Settings.shared.classicUI ? .on : .off
         } else if menuItem.action == #selector(toggleHideMacMenuBar(_:)) {

@@ -70,6 +70,7 @@ final class Settings {
         static let appearance = "Appearance"
         static let classicUI = "ClassicUI"
         static let hideMacMenuBar = "HideMacMenuBar"
+        static let lineSpacing = "LineSpacingPercent"
     }
 
     private init() {
@@ -83,6 +84,7 @@ final class Settings {
             Key.appearance: AppearanceMode.system.rawValue,
             Key.classicUI: false,
             Key.hideMacMenuBar: true,
+            Key.lineSpacing: 100,
         ])
     }
 
@@ -150,6 +152,18 @@ final class Settings {
     var hideMacMenuBar: Bool {
         get { return defaults.bool(forKey: Key.hideMacMenuBar) }
         set { defaults.set(newValue, forKey: Key.hideMacMenuBar) }
+    }
+
+    /// ［書式］→［行間］で選べる倍率（%）
+    static let lineSpacingChoices = [100, 115, 130, 150, 200]
+
+    var lineSpacingPercent: Int {
+        get { return min(300, max(100, defaults.integer(forKey: Key.lineSpacing))) }
+        set { defaults.set(newValue, forKey: Key.lineSpacing) }
+    }
+
+    var lineSpacing: CGFloat {
+        return CGFloat(lineSpacingPercent) / 100
     }
 
     var wordWrap: Bool {

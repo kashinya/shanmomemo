@@ -77,6 +77,14 @@ enum MainMenu {
         formatMenu.addItem(item("右端で折り返す", #selector(AppDelegate.toggleWordWrap(_:))))
         formatMenu.addItem(item(Settings.hasPC98Font ? "等幅フォント（PC-9800）" : "等幅フォント",
                                 #selector(AppDelegate.toggleMonospaceFont(_:))))
+        let lineSpacingItem = NSMenuItem(title: "行間", action: nil, keyEquivalent: "")
+        let lineSpacingMenu = NSMenu(title: "行間")
+        for percent in Settings.lineSpacingChoices {
+            let title = percent == 100 ? "標準" : "\(String(format: "%g", Double(percent) / 100)) 倍"
+            lineSpacingMenu.addItem(item(title, #selector(AppDelegate.setLineSpacing(_:)), tag: percent))
+        }
+        lineSpacingItem.submenu = lineSpacingMenu
+        formatMenu.addItem(lineSpacingItem)
         formatMenu.addItem(item("フォント…", #selector(AppDelegate.showFontPanel(_:)), "t"))
         formatMenu.addItem(NSMenuItem.separator())
         let saveEncodingItem = NSMenuItem(title: "保存時の文字コード", action: nil, keyEquivalent: "")

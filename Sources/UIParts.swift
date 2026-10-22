@@ -10,9 +10,12 @@ final class FixedLineHeightDelegate: NSObject, NSLayoutManagerDelegate {
     private(set) var lineHeight: CGFloat = 0
     private(set) var baselineOffset: CGFloat = 0
 
-    func update(for font: NSFont, layoutManager: NSLayoutManager) {
-        lineHeight = layoutManager.defaultLineHeight(for: font)
-        baselineOffset = layoutManager.defaultBaselineOffset(for: font)
+    /// spacing: 行間の倍率（［書式］→［行間］）。広げた分は行の上と下に半分ずつ
+    func update(for font: NSFont, layoutManager: NSLayoutManager, spacing: CGFloat = 1) {
+        let natural = layoutManager.defaultLineHeight(for: font)
+        // 広げるときは整数に丸める（PC-9800 フォントのドットがピクセルからずれんように）
+        lineHeight = spacing == 1 ? natural : (natural * spacing).rounded()
+        baselineOffset = layoutManager.defaultBaselineOffset(for: font) + ((lineHeight - natural) / 2).rounded(.down)
     }
 
     func layoutManager(_ layoutManager: NSLayoutManager,
@@ -306,7 +309,7 @@ final class PrintTextView: NSTextView {
         let storage = NSTextStorage(string: text, attributes: attributes)
         let layoutManager = NSLayoutManager()
         let lineHeight = FixedLineHeightDelegate()
-        lineHeight.update(for: font, layoutManager: layoutManager)
+        lineHeight.update(for: font, layoutManager: layoutManager, spacing: Settings.shared.lineSpacing)
         layoutManager.delegate = lineHeight
         storage.addLayoutManager(layoutManager)
 

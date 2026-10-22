@@ -172,7 +172,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let base = Settings.shared.editorFont
         let size = max(2, base.pointSize * CGFloat(zoomPercent) / 100)
         let font = NSFont(descriptor: base.fontDescriptor, size: size) ?? base
-        lineHeightDelegate.update(for: font, layoutManager: layoutManager)
+        lineHeightDelegate.update(for: font, layoutManager: layoutManager, spacing: Settings.shared.lineSpacing)
         scrollView.verticalLineScroll = max(1, lineHeightDelegate.lineHeight)   // スクロールバーの矢印で 1 行ずつ
         layoutManager.pixelFontDotSize = font.fontName == Settings.pc98FontName ? font.pointSize / 16 : nil
         textView.needsDisplay = true
