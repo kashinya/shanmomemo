@@ -1,30 +1,6 @@
 import AppKit
 import CoreText
 
-/// ［表示］→［外観］。Windows 11 のメモ帳と同じく「システム設定に合わせる / ライト / ダーク」
-enum AppearanceMode: Int, CaseIterable {
-    case system = 0
-    case light = 1
-    case dark = 2
-
-    var displayName: String {
-        switch self {
-        case .system: return "システム設定に合わせる"
-        case .light: return "ライト"
-        case .dark: return "ダーク"
-        }
-    }
-
-    /// nil = システム設定に合わせる
-    var appearance: NSAppearance? {
-        switch self {
-        case .system: return nil
-        case .light: return NSAppearance(named: .aqua)
-        case .dark: return NSAppearance(named: .darkAqua)
-        }
-    }
-}
-
 /// メモ帳.app/Contents/Resources/Fonts に入れたフォント（build.sh が PC-9800 フォントを入れる）を、
 /// このアプリの中だけで使えるようにする。Mac 全体にはインストールしない。
 enum EmbeddedFonts {
@@ -67,7 +43,10 @@ final class Settings {
         static let wrapAround = "FindWrapAround"
         static let tabWidth = "TabWidth"
         static let monospaceMode = "MonospaceMode"
-        static let appearance = "Appearance"
+        static let legacyAppearance = "Appearance"   // 前の版の［外観］(0: システム, 1: ライト, 2: ダーク)
+        static let theme = "Theme"
+        static let backgroundOpacity = "BackgroundOpacity"
+        static let backgroundImageOpacity = "BackgroundImageOpacity"
         static let classicUI = "ClassicUI"
         static let hideMacMenuBar = "HideMacMenuBar"
         static let lineSpacing = "LineSpacingPercent"
@@ -81,7 +60,8 @@ final class Settings {
             Key.wrapAround: false,
             Key.tabWidth: 8,
             Key.monospaceMode: false,
-            Key.appearance: AppearanceMode.system.rawValue,
+            Key.backgroundOpacity: 1.0,
+            Key.backgroundImageOpacity: 0.15,
             Key.classicUI: false,
             Key.hideMacMenuBar: true,
             Key.lineSpacing: 100,
@@ -137,9 +117,30 @@ final class Settings {
         set { defaults.set(newValue, forKey: Key.monospaceMode) }
     }
 
-    var appearance: AppearanceMode {
-        get { return AppearanceMode(rawValue: defaults.integer(forKey: Key.appearance)) ?? .system }
-        set { defaults.set(newValue.rawValue, forKey: Key.appearance) }
+    var theme: EditorTheme {
+        get {
+            if let id = defaults.string(forKey: Key.theme), let theme = EditorTheme.named(id) {
+                return theme
+            }
+            switch defaults.integer(forKey: Key.legacyAppearance) {
+            case 1: return .light
+            case 2: return .dark
+            default: return .system
+            }
+        }
+        set { defaults.set(newValue.id, forKey: Key.theme) }
+    }
+
+    /// 本文の背景の不透明度（20%〜100%）。100% 未満やと後ろのデスクトップが透ける
+    var backgroundOpacity: CGFloat {
+        get { return CGFloat(min(1, max(0.2, defaults.double(forKey: Key.backgroundOpacity)))) }
+        set { defaults.set(Double(newValue), forKey: Key.backgroundOpacity) }
+    }
+
+    /// 背景の画像の濃さ（0%〜80%）
+    var backgroundImageOpacity: CGFloat {
+        get { return CGFloat(min(0.8, max(0, defaults.double(forKey: Key.backgroundImageOpacity)))) }
+        set { defaults.set(Double(newValue), forKey: Key.backgroundImageOpacity) }
     }
 
     /// ［表示］→［Windows 2000 風］

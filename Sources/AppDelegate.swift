@@ -16,7 +16,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     func applicationWillFinishLaunching(_ notification: Notification) {
         NSWindow.allowsAutomaticWindowTabbing = false   // 「タブで開く」系をアプリごと封印
         EmbeddedFonts.register()                        // メニューを作る前に（等幅フォントの名前が変わる）
-        NSApp.appearance = Settings.shared.appearance.appearance
+        NSApp.appearance = Settings.shared.theme.appearance
         NSApp.mainMenu = MainMenu.make()
         // フォントパネルの変更は本文ビューやなくて、ここで受けて全ウィンドウに反映する
         NSFontManager.shared.action = #selector(AppDelegate.fontPanelChangedFont(_:))
@@ -229,10 +229,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.presentationOptions = settings.classicUI && settings.hideMacMenuBar ? [.autoHideDock, .autoHideMenuBar] : []
     }
 
-    @objc func setAppearanceMode(_ sender: Any?) {
-        guard let item = sender as? NSMenuItem, let mode = AppearanceMode(rawValue: item.tag) else { return }
-        Settings.shared.appearance = mode
-        NSApp.appearance = mode.appearance
+    @objc func setTheme(_ sender: Any?) {
+        guard let item = sender as? NSMenuItem, EditorTheme.all.indices.contains(item.tag) else { return }
+        Settings.shared.theme = EditorTheme.all[item.tag]
+        applyThemeToAll()
+    }
+
+    @objc func showThemePanel(_ sender: Any?) {
+        ThemePanelController.shared.show()
+    }
+
+    func applyThemeToAll() {
+        NSApp.appearance = Settings.shared.theme.appearance
+        for controller in controllers {
+            controller.applyTheme()
+        }
+        ThemePanelController.shared.syncFromSettings()
+    }
+
+    /// 背景の不透明度と画像だけ（スライダーを動かしてる間に本文を組み直さんように）
+    func applyBackgroundToAll() {
+        for controller in controllers {
+            controller.applyBackground()
+        }
     }
 
     @objc func showFontPanel(_ sender: Any?) {
@@ -278,8 +297,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.state = Settings.shared.showStatusBar ? .on : .off
         } else if menuItem.action == #selector(toggleMonospaceFont(_:)) {
             menuItem.state = Settings.shared.monospaceMode ? .on : .off
-        } else if menuItem.action == #selector(setAppearanceMode(_:)) {
-            menuItem.state = menuItem.tag == Settings.shared.appearance.rawValue ? .on : .off
+        } else if menuItem.action == #selector(setTheme(_:)) {
+            let isCurrent = EditorTheme.all.indices.contains(menuItem.tag) && EditorTheme.all[menuItem.tag].id == Settings.shared.theme.id
+            menuItem.state = isCurrent ? .on : .off
         } else if menuItem.action == #selector(setLineSpacing(_:)) {
             menuItem.state = menuItem.tag == Settings.shared.lineSpacingPercent ? .on : .off
         } else if menuItem.action == #selector(toggleClassicUI(_:)) {

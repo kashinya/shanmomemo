@@ -127,6 +127,8 @@ final class EditorRootView: NSView {
     }
     /// 本文まわりのへこんだ枠を描く範囲（Windows 2000 風のとき）
     var clientRect: NSRect = .zero
+    /// 塗らずに抜いておく範囲（本文の後ろ。背景を半透明にしたときに透けるように）
+    var textRect: NSRect = .zero
     var onLayout: (() -> Void)?
 
     private struct Edges: OptionSet {
@@ -153,6 +155,8 @@ final class EditorRootView: NSView {
         if !clientRect.isEmpty {
             Classic.drawEdge(clientRect, Classic.sunken)
         }
+        NSColor.clear.setFill()
+        textRect.fill()
     }
 
     private func edges(at point: NSPoint) -> Edges {

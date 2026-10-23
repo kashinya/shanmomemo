@@ -114,13 +114,18 @@ enum MainMenu {
         zoomItem.submenu = zoomMenu
         viewMenu.addItem(zoomItem)
         viewMenu.addItem(item("ステータス バー", #selector(AppDelegate.toggleStatusBar(_:))))
-        let appearanceItem = NSMenuItem(title: "外観", action: nil, keyEquivalent: "")
-        let appearanceMenu = NSMenu(title: "外観")
-        for mode in AppearanceMode.allCases {
-            appearanceMenu.addItem(item(mode.displayName, #selector(AppDelegate.setAppearanceMode(_:)), tag: mode.rawValue))
+        let themeItem = NSMenuItem(title: "テーマ", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "テーマ")
+        for (index, theme) in EditorTheme.all.enumerated() {
+            themeMenu.addItem(item(theme.name, #selector(AppDelegate.setTheme(_:)), tag: index))
+            if theme.id == EditorTheme.dark.id {
+                themeMenu.addItem(NSMenuItem.separator())   // 標準の 3 つと Panic のを分ける
+            }
         }
-        appearanceItem.submenu = appearanceMenu
-        viewMenu.addItem(appearanceItem)
+        themeMenu.addItem(NSMenuItem.separator())
+        themeMenu.addItem(item("テーマの設定…", #selector(AppDelegate.showThemePanel(_:))))
+        themeItem.submenu = themeMenu
+        viewMenu.addItem(themeItem)
         viewMenu.addItem(NSMenuItem.separator())
         viewMenu.addItem(item("Windows 2000 風", #selector(AppDelegate.toggleClassicUI(_:))))
         viewMenu.addItem(item("Mac のメニューバーと Dock を隠す", #selector(AppDelegate.toggleHideMacMenuBar(_:))))

@@ -14,6 +14,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private let scrollView: NSScrollView
     private let statusBar: StatusBarView
     private let rootView = EditorRootView()
+    private let backgroundView = EditorBackgroundView()
     // Windows 2000 風のときだけ出す部品
     private let titleBar = ClassicTitleBar()
     private let menuBar = ClassicMenuBar()
@@ -72,7 +73,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
         setUpWindow()
         setUpTextView()
-        applyFont()
+        applyTheme()
         applyWordWrap()
         applyClassicUI()
         applyStatusBarVisibility()
@@ -90,6 +91,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         window.contentView = rootView
         rootView.autoresizesSubviews = true
         rootView.onLayout = { [weak self] in self?.layoutContent() }
+        rootView.addSubview(backgroundView)   // 本文の後ろ（背景色・半透明・画像）
         rootView.addSubview(scrollView)
         rootView.addSubview(statusBar)
         window.initialFirstResponder = textView
@@ -99,8 +101,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        // 背景は後ろの backgroundView が描く（半透明と画像のため）
+        scrollView.drawsBackground = false
+        scrollView.contentView.drawsBackground = false
         scrollView.documentView = textView
         // 本文の大きさが変わったのも拾うので、documentView を入れてから
         verticalBar.attach(to: scrollView)
@@ -133,9 +136,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         disableIfAvailable("setInlinePredictionType:", key: "inlinePredictionType", value: 1)   // macOS 14+
         disableIfAvailable("setWritingToolsBehavior:", key: "writingToolsBehavior", value: -1)  // macOS 15+
 
-        textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
-        textView.insertionPointColor = .textColor
+        textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 4, height: 4)
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: EditorWindowController.unlimited, height: EditorWindowController.unlimited)
@@ -178,7 +179,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.needsDisplay = true
 
         let style = EditorWindowController.paragraphStyle(for: font)
-        textAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: NSColor.textColor]
+        textAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: Settings.shared.theme.text]
         textView.defaultParagraphStyle = style
         textView.typingAttributes = textAttributes
 
@@ -265,9 +266,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         }
         window.setFrame(frame, display: false)
         window.hasShadow = true
-        // Windows 2000 にダークモードは無いので、本文も白地に黒
+        // まわりの部品は Windows 2000 の明るい色のまま（本文の色はテーマに従う）
         window.appearance = classic ? NSAppearance(named: .aqua) : nil
-        window.backgroundColor = classic ? Classic.face : .windowBackgroundColor
+        updateWindowBackground()
 
         rootView.classic = classic
         for view in [titleBar, menuBar, verticalBar, horizontalBar] as [NSView] {
@@ -288,6 +289,32 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         window.makeFirstResponder(textView)
     }
 
+    /// テーマ（文字・背景・選択・カーソルの色）と背景の不透明度・画像を反映する
+    func applyTheme() {
+        let theme = Settings.shared.theme
+        textView.insertionPointColor = theme.cursor
+        textView.selectedTextAttributes = [.backgroundColor: theme.selection]
+        backgroundView.color = theme.background
+        applyBackground()
+        applyFont()   // 文字の色
+    }
+
+    /// 背景の不透明度と画像だけ
+    func applyBackground() {
+        let settings = Settings.shared
+        backgroundView.opacity = settings.backgroundOpacity
+        backgroundView.image = BackgroundImage.image
+        backgroundView.imageOpacity = settings.backgroundImageOpacity
+        updateWindowBackground()
+    }
+
+    private func updateWindowBackground() {
+        let opaque = Settings.shared.backgroundOpacity >= 1
+        window.isOpaque = opaque
+        window.backgroundColor = opaque ? (Settings.shared.classicUI ? Classic.face : .windowBackgroundColor) : .clear
+        window.invalidateShadow()
+    }
+
     /// 本文・ステータスバー・（Windows 2000 風のときは）タイトルバー・メニューバー・スクロールバーを並べる。上が y = 0
     private func layoutContent() {
         let bounds = rootView.bounds
@@ -299,6 +326,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             rootView.clientRect = .zero
             statusBar.frame = NSRect(x: 0, y: bounds.height - StatusBarView.height, width: bounds.width, height: StatusBarView.height)
             scrollView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - statusHeight))
+            backgroundView.frame = scrollView.frame
             return
         }
 
@@ -318,6 +346,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let text = NSRect(x: inner.minX, y: inner.minY, width: max(0, inner.width - barSize),
                           height: max(0, inner.height - (showHorizontal ? barSize : 0)))
         scrollView.frame = text
+        backgroundView.frame = text
+        rootView.textRect = text
         verticalBar.frame = NSRect(x: text.maxX, y: text.minY, width: barSize, height: text.height)
         horizontalBar.isHidden = !showHorizontal
         horizontalBar.frame = NSRect(x: text.minX, y: text.maxY, width: text.width, height: barSize)
