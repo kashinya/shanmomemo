@@ -119,7 +119,7 @@ final class EditorBackgroundView: NSView {
         // システムの色は、ここで今のライト／ダークの色に決まる
         let resolved = color.usingColorSpace(.sRGB) ?? color
         resolved.withAlphaComponent(resolved.alphaComponent * opacity).setFill()
-        bounds.fill()   // 塗り替え（半透明なら後ろのデスクトップが透ける）
+        bounds.fill()   // 半透明なら後ろのデスクトップが透ける（この View は不透明やないので、描く前は透明）
 
         guard let image = image, imageOpacity > 0, image.size.width > 0, image.size.height > 0 else { return }
         // 縦横比を保ったまま、隙間なく敷き詰める（はみ出たところは切れる）
@@ -127,8 +127,11 @@ final class EditorBackgroundView: NSView {
         let size = NSSize(width: image.size.width * scale, height: image.size.height * scale)
         let rect = NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2,
                           width: size.width, height: size.height)
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(rect: bounds).addClip()   // macOS 14 以降の SDK やと、View は枠の外を自分では切らない
         image.draw(in: rect, from: .zero, operation: .sourceOver, fraction: imageOpacity,
                    respectFlipped: true, hints: nil)
+        NSGraphicsContext.restoreGraphicsState()
     }
 }
 
@@ -210,6 +213,11 @@ final class ThemePanelController: NSObject {
         open.message = "背景に使う画像を選んでください"
         guard open.runModal() == .OK, let url = open.url else { return }
         do {
+            // 画像でないものや大きすぎるものは、丸ごと読む前に断る
+            let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+            guard size <= 100_000_000, NSImage(contentsOf: url) != nil else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
             try BackgroundImage.set(data: Data(contentsOf: url))
         } catch {
             showError(error)

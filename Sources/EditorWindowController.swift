@@ -266,8 +266,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         }
         window.setFrame(frame, display: false)
         window.hasShadow = true
-        // まわりの部品は Windows 2000 の明るい色のまま（本文の色はテーマに従う）
-        window.appearance = classic ? NSAppearance(named: .aqua) : nil
+        // まわりの部品だけ Windows 2000 の明るい色に固定する（ウィンドウごと固定すると本文までテーマの明暗に従わなくなる）
+        let chromeAppearance = classic ? NSAppearance(named: .aqua) : nil
+        for view in [titleBar, menuBar, verticalBar, horizontalBar, statusBar] as [NSView] {
+            view.appearance = chromeAppearance
+        }
         updateWindowBackground()
 
         rootView.classic = classic
@@ -898,6 +901,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     func textDidChange(_ notification: Notification) {
         if let undoManager = textView.undoManager, undoManager.isUndoing || undoManager.isRedoing {
             lineCache = nil
+            // 元に戻すと、そのときの色や大きさ（テーマやズームを変える前）まで戻ってくるので、今のに揃え直す
+            textStorage.beginEditing()
+            textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
+            textStorage.endEditing()
         }
         setDirty(true)
         scheduleStatusUpdate()

@@ -155,8 +155,9 @@ final class EditorRootView: NSView {
         if !clientRect.isEmpty {
             Classic.drawEdge(clientRect, Classic.sunken)
         }
+        // Swift の fill() は重ね塗りなので、透明で「塗り替える」には .copy
         NSColor.clear.setFill()
-        textRect.fill()
+        textRect.fill(using: .copy)
     }
 
     private func edges(at point: NSPoint) -> Edges {
