@@ -192,6 +192,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.beginEditing()
         textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
         textStorage.endEditing()
+        updateSeditWrapWidth()   // ズームで ↓ の幅が変わる
     }
 
     func applyWordWrap() {
@@ -201,7 +202,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             scrollView.hasHorizontalScroller = false
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
-            textContainer.widthTracksTextView = true
+            // SEDIT 風は右に ↓ の 1 桁を残すので、幅は自分で合わせる
+            textContainer.widthTracksTextView = !Settings.shared.seditMode
             textView.setFrameSize(NSSize(width: size.width, height: textView.frame.height))
             let inset = textView.textContainerInset.width * 2
             textContainer.size = NSSize(width: max(0, size.width - inset), height: EditorWindowController.unlimited)
@@ -215,6 +217,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         }
         layoutContent()
         updateTextViewMinSize()
+        updateSeditWrapWidth()
         textView.sizeToFit()
         textView.scrollRangeToVisible(textView.selectedRange())
     }
@@ -241,6 +244,19 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     @objc private func clipViewFrameDidChange(_ notification: Notification) {
         updateTextViewMinSize()
+        updateSeditWrapWidth()
+    }
+
+    /// SEDIT 風で折り返すとき: 右端に改行の ↓ が入る 1 桁を残して折り返す
+    private func updateSeditWrapWidth() {
+        guard Settings.shared.seditMode, Settings.shared.wordWrap else { return }
+        let font = textView.typingAttributes[.font] as? NSFont
+        let reserve = ceil((font?.pointSize ?? 16) / 2)
+        let width = max(0, scrollView.contentSize.width - textView.textContainerInset.width * 2 - reserve)
+        let size = NSSize(width: width, height: EditorWindowController.unlimited)
+        if textContainer.size != size {
+            textContainer.size = size
+        }
     }
 
     func applyStatusBarVisibility() {
@@ -734,11 +750,28 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     /// ［編集］→［ファイルを挿入…］（SEDIT の f・4）: 選んだファイルの中身をカーソルの位置に入れる
     @objc func insertFile(_ sender: Any?) {
         guard let choice = FilePanels.runOpen() else { return }
+        let loaded: FileIO.Loaded
         do {
-            let loaded = try FileIO.load(choice.url, encoding: choice.encoding)
-            textView.insertText(loaded.text, replacementRange: textView.selectedRange())
+            loaded = try FileIO.load(choice.url, encoding: choice.encoding)
         } catch {
             showError("「\(choice.url.lastPathComponent)」を読めませんでした。", error)
+            return
+        }
+        // 打ってた文字とは別の「元に戻す」にする
+        let range = textView.selectedRange()
+        textView.breakUndoCoalescing()
+        guard textView.shouldChangeText(in: range, replacementString: loaded.text) else { return }
+        textStorage.replaceCharacters(in: range, with: NSAttributedString(string: loaded.text, attributes: textAttributes))
+        textView.didChangeText()
+        textView.undoManager?.setActionName("ファイルの挿入")
+        textView.setSelectedRange(NSRange(location: range.location + (loaded.text as NSString).length, length: 0))
+        textView.scrollRangeToVisible(textView.selectedRange())
+        if loaded.lossy {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "一部の文字を正しく読み込めませんでした。"
+            alert.informativeText = "\(loaded.encoding.displayName) として入れました。文字化けしている場合は、元に戻してから、開くダイアログの「文字コード」を指定して入れ直してください。"
+            alert.runModal()
         }
     }
 

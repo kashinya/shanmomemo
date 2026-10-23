@@ -13,7 +13,23 @@ final class EditorTextView: NSTextView {
     // MARK: - SEDIT 風の印
 
     override func draw(_ dirtyRect: NSRect) {
+        // 印は字とカーソルより先（下）に描く（[EOF] の水色でカーソルを隠さんように）。背景は後ろの View が描いてる
+        drawSeditMarks(in: dirtyRect)
         super.draw(dirtyRect)
+    }
+
+    /// SEDIT 風で折り返さないとき、いちばん長い行の ↓ と [EOF] がはみ出さんよう、右に [EOF] の幅だけ足す
+    override func setConstrainedFrameSize(_ desiredSize: NSSize) {
+        var size = desiredSize
+        if showsSeditMarks, isHorizontallyResizable, let layoutManager = layoutManager, let container = textContainer,
+           let font = typingAttributes[.font] as? NSFont {
+            let reserve = ceil(("[EOF]" as NSString).size(withAttributes: [.font: font]).width)
+            size.width = max(size.width, layoutManager.usedRect(for: container).maxX + textContainerInset.width * 2 + reserve)
+        }
+        super.setConstrainedFrameSize(size)
+    }
+
+    private func drawSeditMarks(in dirtyRect: NSRect) {
         guard showsSeditMarks, let layoutManager = layoutManager, let container = textContainer,
               let font = typingAttributes[.font] as? NSFont else { return }
         let origin = textContainerOrigin
@@ -26,7 +42,7 @@ final class EditorTextView: NSTextView {
         }
 
         // 改行の ↓（見えてるところだけ）
-        let string = (textStorage?.string ?? "") as NSString
+        guard let string = textStorage?.mutableString else { return }   // .string やと毎回まるごと写すので
         let visibleGlyphs = layoutManager.glyphRange(forBoundingRect: dirtyRect.offsetBy(dx: -origin.x, dy: -origin.y), in: container)
         let visibleChars = layoutManager.characterRange(forGlyphRange: visibleGlyphs, actualGlyphRange: nil)
         Sedit.yellow.setFill()
@@ -64,7 +80,7 @@ final class EditorTextView: NSTextView {
         guard eofRect.intersects(dirtyRect) else { return }
         Sedit.cyan.setFill()
         eofRect.fill()
-        Sedit.drawPixelText {
+        Sedit.drawPixelText(dot: dot) {
             ("[EOF]" as NSString).draw(at: eofOrigin, withAttributes: attributes)
         }
     }

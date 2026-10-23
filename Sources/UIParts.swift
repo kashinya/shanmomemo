@@ -38,6 +38,17 @@ final class EditorLayoutManager: NSLayoutManager {
     /// PC-9800 フォントの 1 ドットの大きさ（pt、1/16 em）。nil = 普通に描く
     var pixelFontDotSize: CGFloat?
 
+    /// 最後の改行のあとの空の行（と空の文書の 1 行目）は delegate を通らんので、行間を広げても高さが元のまま。ほかの行に揃える
+    override func setExtraLineFragmentRect(_ fragmentRect: NSRect, usedRect: NSRect, textContainer container: NSTextContainer) {
+        var fragmentRect = fragmentRect
+        var usedRect = usedRect
+        if let lineHeight = (delegate as? FixedLineHeightDelegate)?.lineHeight, lineHeight > 0, !fragmentRect.isEmpty {
+            fragmentRect.size.height = lineHeight
+            usedRect.size.height = lineHeight
+        }
+        super.setExtraLineFragmentRect(fragmentRect, usedRect: usedRect, textContainer: container)
+    }
+
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
         // 1 ドットが画面の 1 ピクセルより小さいと、アンチエイリアスなしでは線ごと消える（三が二になる）ので、そのときは切らない。
         // 描くたびに測るので、Retina と普通の画面のあいだでウィンドウを動かしても合う

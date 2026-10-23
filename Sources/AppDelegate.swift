@@ -31,7 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                   event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
                   let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first,
                   (NSF1FunctionKey...NSF10FunctionKey).contains(Int(scalar.value)),
-                  let controller = self?.controllers.first(where: { $0.window === NSApp.keyWindow }) else {
+                  let controller = self?.controllers.first(where: { $0.window === NSApp.keyWindow }),
+                  !controller.textView.hasMarkedText() else {   // 日本語の変換中は F6〜F10 を変換に使うので IM に渡す
                 return event
             }
             controller.performSeditFunction(Int(scalar.value) - NSF1FunctionKey + 1)
@@ -322,9 +323,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return !Settings.shared.seditMode   // SEDIT 風は上の行に出すので
         } else if menuItem.action == #selector(toggleMonospaceFont(_:)) {
             menuItem.state = Settings.shared.monospaceMode ? .on : .off
+            return !Settings.shared.seditMode   // SEDIT 風はいつも PC-9800 フォント
+        } else if menuItem.action == #selector(showFontPanel(_:)) {
+            return !Settings.shared.seditMode
         } else if menuItem.action == #selector(setTheme(_:)) {
             let isCurrent = EditorTheme.all.indices.contains(menuItem.tag) && EditorTheme.all[menuItem.tag].id == Settings.shared.theme.id
             menuItem.state = isCurrent ? .on : .off
+            return !Settings.shared.seditMode   // SEDIT 風はいつも黒地に白
         } else if menuItem.action == #selector(setLineSpacing(_:)) {
             menuItem.state = menuItem.tag == Settings.shared.lineSpacingPercent ? .on : .off
         } else if menuItem.action == #selector(toggleSeditMode(_:)) {
