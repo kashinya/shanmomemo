@@ -10,6 +10,8 @@ struct EditorTheme {
     let background: NSColor
     let selection: NSColor
     let cursor: NSColor
+    /// 選択したところの文字の色。nil = そのまま（テーマの文字色）
+    var selectionText: NSColor? = nil
 
     var appearance: NSAppearance? {
         return appearanceName.flatMap { NSAppearance(named: $0) }

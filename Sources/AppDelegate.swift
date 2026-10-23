@@ -5,6 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     static private(set) var shared: AppDelegate!
 
     private(set) var controllers: [EditorWindowController] = []
+    private var functionKeyMonitor: Any?
 
     override init() {
         super.init()
@@ -17,9 +18,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSWindow.allowsAutomaticWindowTabbing = false   // 「タブで開く」系をアプリごと封印
         EmbeddedFonts.register()                        // メニューを作る前に（等幅フォントの名前が変わる）
         NSApp.appearance = Settings.shared.theme.appearance
+        installFunctionKeyMonitor()
         NSApp.mainMenu = MainMenu.make()
         // フォントパネルの変更は本文ビューやなくて、ここで受けて全ウィンドウに反映する
         NSFontManager.shared.action = #selector(AppDelegate.fontPanelChangedFont(_:))
+    }
+
+    /// SEDIT 風のときは F1〜F10 を SEDIT のファンクションキーにする（メニューの F3・F5 より先に拾う）
+    private func installFunctionKeyMonitor() {
+        functionKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard Settings.shared.seditMode,
+                  event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+                  let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first,
+                  (NSF1FunctionKey...NSF10FunctionKey).contains(Int(scalar.value)),
+                  let controller = self?.controllers.first(where: { $0.window === NSApp.keyWindow }) else {
+                return event
+            }
+            controller.performSeditFunction(Int(scalar.value) - NSF1FunctionKey + 1)
+            return nil
+        }
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -208,6 +225,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         applyFontToAll()
     }
 
+    @objc func toggleSeditMode(_ sender: Any?) {
+        Settings.shared.seditMode.toggle()
+        for controller in controllers {
+            controller.applySeditMode()
+        }
+    }
+
     @objc func toggleClassicUI(_ sender: Any?) {
         Settings.shared.classicUI.toggle()
         // 先に Mac のメニューバーと Dock を戻す（ウィンドウを画面に収めるときに本当の大きさで測れるように）
@@ -295,6 +319,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.state = Settings.shared.wordWrap ? .on : .off
         } else if menuItem.action == #selector(toggleStatusBar(_:)) {
             menuItem.state = Settings.shared.showStatusBar ? .on : .off
+            return !Settings.shared.seditMode   // SEDIT 風は上の行に出すので
         } else if menuItem.action == #selector(toggleMonospaceFont(_:)) {
             menuItem.state = Settings.shared.monospaceMode ? .on : .off
         } else if menuItem.action == #selector(setTheme(_:)) {
@@ -302,6 +327,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             menuItem.state = isCurrent ? .on : .off
         } else if menuItem.action == #selector(setLineSpacing(_:)) {
             menuItem.state = menuItem.tag == Settings.shared.lineSpacingPercent ? .on : .off
+        } else if menuItem.action == #selector(toggleSeditMode(_:)) {
+            menuItem.state = Settings.shared.seditMode ? .on : .off
         } else if menuItem.action == #selector(toggleClassicUI(_:)) {
             menuItem.state = Settings.shared.classicUI ? .on : .off
         } else if menuItem.action == #selector(toggleHideMacMenuBar(_:)) {

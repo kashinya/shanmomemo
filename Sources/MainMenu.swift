@@ -61,6 +61,7 @@ enum MainMenu {
         editMenu.addItem(item("置換…", #selector(EditorWindowController.showReplacePanel(_:)), "f", [.command, .option]))
         editMenu.addItem(item("選択範囲を検索に使用", #selector(EditorWindowController.useSelectionForFind(_:)), "e"))
         editMenu.addItem(item("行へ移動…", #selector(EditorWindowController.goToLine(_:)), "l"))
+        editMenu.addItem(item("ファイルを挿入…", #selector(EditorWindowController.insertFile(_:))))
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(item("すべて選択", #selector(NSText.selectAll(_:)), "a"))
         editMenu.addItem(item("日付と時刻", #selector(EditorWindowController.insertDateTime(_:)),
@@ -129,6 +130,8 @@ enum MainMenu {
         viewMenu.addItem(NSMenuItem.separator())
         viewMenu.addItem(item("Windows 2000 風", #selector(AppDelegate.toggleClassicUI(_:))))
         viewMenu.addItem(item("Mac のメニューバーと Dock を隠す", #selector(AppDelegate.toggleHideMacMenuBar(_:))))
+        viewMenu.addItem(NSMenuItem.separator())
+        viewMenu.addItem(item("SEDIT 風", #selector(AppDelegate.toggleSeditMode(_:))))
         add(viewMenu, to: mainMenu)
 
         // ウインドウ

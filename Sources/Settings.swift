@@ -50,6 +50,7 @@ final class Settings {
         static let classicUI = "ClassicUI"
         static let hideMacMenuBar = "HideMacMenuBar"
         static let lineSpacing = "LineSpacingPercent"
+        static let seditMode = "SeditMode"
     }
 
     private init() {
@@ -65,6 +66,7 @@ final class Settings {
             Key.classicUI: false,
             Key.hideMacMenuBar: true,
             Key.lineSpacing: 100,
+            Key.seditMode: false,
         ])
     }
 
@@ -109,7 +111,13 @@ final class Settings {
 
     /// 本文に使うフォント。等幅フォントモードのときはフォントパネルで選んだのより優先
     var editorFont: NSFont {
-        return monospaceMode ? Settings.monospaceFont : font
+        return monospaceMode || seditMode ? Settings.monospaceFont : font
+    }
+
+    /// ［表示］→［SEDIT 風］
+    var seditMode: Bool {
+        get { return defaults.bool(forKey: Key.seditMode) }
+        set { defaults.set(newValue, forKey: Key.seditMode) }
     }
 
     var monospaceMode: Bool {

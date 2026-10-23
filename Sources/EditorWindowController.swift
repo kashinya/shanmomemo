@@ -15,6 +15,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private let statusBar: StatusBarView
     private let rootView = EditorRootView()
     private let backgroundView = EditorBackgroundView()
+    // SEDIT 風のときだけ出す部品
+    private let seditLine = SeditStatusLine()
+    private let functionBar = SeditFunctionBar()
+    private var totalLinesCache: Int?
     // Windows 2000 風のときだけ出す部品
     private let titleBar = ClassicTitleBar()
     private let menuBar = ClassicMenuBar()
@@ -76,6 +80,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         applyTheme()
         applyWordWrap()
         applyClassicUI()
+        applySeditMode()
         applyStatusBarVisibility()
         updateTitle()
     }
@@ -94,6 +99,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         rootView.addSubview(backgroundView)   // 本文の後ろ（背景色・半透明・画像）
         rootView.addSubview(scrollView)
         rootView.addSubview(statusBar)
+        functionBar.onPress = { [weak self] number in self?.performSeditFunction(number) }
         window.initialFirstResponder = textView
     }
 
@@ -179,7 +185,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.needsDisplay = true
 
         let style = EditorWindowController.paragraphStyle(for: font)
-        textAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: Settings.shared.theme.text]
+        textAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: activeTheme.text]
         textView.defaultParagraphStyle = style
         textView.typingAttributes = textAttributes
 
@@ -284,6 +290,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         if classic {
             menuBar.reload()
         }
+        updateWindowAppearance()
         scrollView.hasVerticalScroller = !classic
         scrollView.hasHorizontalScroller = !classic && !Settings.shared.wordWrap
         statusBar.classic = classic
@@ -292,11 +299,47 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         window.makeFirstResponder(textView)
     }
 
+    /// SEDIT 風のときは SEDIT の色（黒地に白）、そうでなければ［テーマ］
+    private var activeTheme: EditorTheme {
+        return Settings.shared.seditMode ? Sedit.theme : Settings.shared.theme
+    }
+
+    /// SEDIT 風にする／戻す
+    func applySeditMode() {
+        let sedit = Settings.shared.seditMode
+        for view in [seditLine, functionBar] as [NSView] {
+            if !sedit {
+                view.removeFromSuperview()
+            } else if view.superview == nil {
+                rootView.addSubview(view)
+            }
+        }
+        textView.showsSeditMarks = sedit
+        // SEDIT は画面の左端・上端から字が始まる
+        textView.textContainerInset = sedit ? .zero : NSSize(width: 4, height: 4)
+        textContainer.lineFragmentPadding = sedit ? 0 : 2
+        totalLinesCache = nil
+        updateWindowAppearance()
+        applyTheme()      // 色と PC-9800 フォント
+        applyWordWrap()   // 余白が変わったので、折り返しの幅と並べ方を合わせ直す
+        updateStatusNow()
+    }
+
+    /// SEDIT 風を Mac の枠で出すときは、スクロールバーなども暗くする
+    private func updateWindowAppearance() {
+        let settings = Settings.shared
+        window.appearance = settings.seditMode && !settings.classicUI ? NSAppearance(named: .darkAqua) : nil
+    }
+
     /// テーマ（文字・背景・選択・カーソルの色）と背景の不透明度・画像を反映する
     func applyTheme() {
-        let theme = Settings.shared.theme
+        let theme = activeTheme
         textView.insertionPointColor = theme.cursor
-        textView.selectedTextAttributes = [.backgroundColor: theme.selection]
+        var selection: [NSAttributedString.Key: Any] = [.backgroundColor: theme.selection]
+        if let selectionText = theme.selectionText {
+            selection[.foregroundColor] = selectionText
+        }
+        textView.selectedTextAttributes = selection
         backgroundView.color = theme.background
         applyBackground()
         applyFont()   // 文字の色
@@ -321,14 +364,24 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     /// 本文・ステータスバー・（Windows 2000 風のときは）タイトルバー・メニューバー・スクロールバーを並べる。上が y = 0
     private func layoutContent() {
         let bounds = rootView.bounds
-        let showStatus = Settings.shared.showStatusBar
+        let sedit = Settings.shared.seditMode
+        let showStatus = Settings.shared.showStatusBar && !sedit   // SEDIT 風は上の行に出す
         let statusHeight = showStatus ? StatusBarView.height : 0
         statusBar.isHidden = !showStatus
+
+        /// SEDIT 風なら、いちばん上の行とファンクションキーの欄を取って、残りを返す
+        func carveSeditRows(_ area: NSRect) -> NSRect {
+            guard sedit else { return area }
+            let row = Sedit.rowHeight
+            seditLine.frame = NSRect(x: area.minX, y: area.minY, width: area.width, height: row)
+            functionBar.frame = NSRect(x: area.minX, y: max(area.minY, area.maxY - row), width: area.width, height: row)
+            return NSRect(x: area.minX, y: area.minY + row, width: area.width, height: max(0, area.height - row * 2))
+        }
 
         guard Settings.shared.classicUI else {
             rootView.clientRect = .zero
             statusBar.frame = NSRect(x: 0, y: bounds.height - StatusBarView.height, width: bounds.width, height: StatusBarView.height)
-            scrollView.frame = NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - statusHeight))
+            scrollView.frame = carveSeditRows(NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - statusHeight)))
             backgroundView.frame = scrollView.frame
             return
         }
@@ -343,7 +396,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let client = NSRect(x: border, y: menuBar.frame.maxY, width: innerWidth,
                             height: max(0, bounds.height - border - statusHeight - menuBar.frame.maxY))
         rootView.clientRect = client
-        let inner = client.insetBy(dx: 2, dy: 2)
+        let inner = carveSeditRows(client.insetBy(dx: 2, dy: 2))
         let barSize = Classic.scrollBarSize
         let showHorizontal = !Settings.shared.wordWrap
         let text = NSRect(x: inner.minX, y: inner.minY, width: max(0, inner.width - barSize),
@@ -457,6 +510,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.endEditing()
         textView.undoManager?.removeAllActions()
         lineCache = nil
+        totalLinesCache = nil
         updateTextViewMinSize()
     }
 
@@ -677,6 +731,43 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         window.makeFirstResponder(textView)
     }
 
+    /// ［編集］→［ファイルを挿入…］（SEDIT の f・4）: 選んだファイルの中身をカーソルの位置に入れる
+    @objc func insertFile(_ sender: Any?) {
+        guard let choice = FilePanels.runOpen() else { return }
+        do {
+            let loaded = try FileIO.load(choice.url, encoding: choice.encoding)
+            textView.insertText(loaded.text, replacementRange: textView.selectedRange())
+        } catch {
+            showError("「\(choice.url.lastPathComponent)」を読めませんでした。", error)
+        }
+    }
+
+    // MARK: - SEDIT 風のファンクションキー（F1〜F10 と、下の欄のクリック）
+
+    func performSeditFunction(_ number: Int) {
+        switch number {
+        case 1: textView.cut(nil)
+        case 2: textView.copy(nil)
+        case 3: textView.paste(nil)
+        case 4: insertFile(nil)
+        case 5: popUpControlMenu()
+        case 6: showFindPanel(nil)
+        case 7: findNextMatch(nil)
+        case 8: showReplacePanel(nil)
+        case 9: goToLine(nil)
+        case 10: window.performClose(nil)
+        default: break
+        }
+    }
+
+    /// ｺﾝﾄﾛｰﾙ: ［ファイル］メニューをその場に出す
+    private func popUpControlMenu() {
+        guard let fileMenu = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "ファイル" })?.submenu,
+              let menu = fileMenu.copy() as? NSMenu else { return }
+        let rect = functionBar.itemRect(4)
+        menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.minY), in: functionBar)
+    }
+
     // MARK: - メニューの処理（表示）
 
     @objc func editorZoomIn(_ sender: Any?) {
@@ -793,6 +884,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.didChangeText()
         textView.undoManager?.setActionName("すべて置換")
         lineCache = nil
+        totalLinesCache = nil
         return ranges.count
     }
 
@@ -881,6 +973,14 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func updateStatusNow() {
+        if Settings.shared.seditMode {
+            let total = totalLinesCache ?? (countNewlines(in: NSRange(location: 0, length: textStorage.length)) + 1)
+            totalLinesCache = total
+            let path = fileURL.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "無題"
+            seditLine.update(path: path, line: lineNumber(at: caretLocation), totalLines: total,
+                             column: columnNumber(at: caretLocation), encoding: encoding, lineEnding: lineEnding)
+            return
+        }
         guard Settings.shared.showStatusBar else { return }
         statusBar.update(line: lineNumber(at: caretLocation),
                          column: columnNumber(at: caretLocation),
@@ -899,6 +999,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func textDidChange(_ notification: Notification) {
+        totalLinesCache = nil
+        textView.invalidateEndOfText()
         if let undoManager = textView.undoManager, undoManager.isUndoing || undoManager.isRedoing {
             lineCache = nil
             // 元に戻すと、そのときの色や大きさ（テーマやズームを変える前）まで戻ってくるので、今のに揃え直す
