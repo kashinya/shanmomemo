@@ -56,10 +56,14 @@ final class Settings {
         static let showCharacterCount = "ShowCharacterCount"
     }
 
-    /// このアプリが覚えてることを全部消して、入れたときの状態に戻す（ファイルごとのウィンドウの位置・背景画像も）
+    /// このアプリが覚えてることを全部消して、入れたときの状態に戻す（ファイルごとのウィンドウの位置・背景画像も）。
+    /// macOS が置いてるもの（システム設定で付けたこのアプリのキーボードショートカット NSUserKeyEquivalents や、
+    /// アプリごとの言語 AppleLanguages など、NS・Apple で始まるもの）は残す
     func resetAll() {
-        if let domain = Bundle.main.bundleIdentifier {
-            defaults.removePersistentDomain(forName: domain)
+        if let domain = Bundle.main.bundleIdentifier, let stored = defaults.persistentDomain(forName: domain) {
+            for key in stored.keys where !key.hasPrefix("NS") && !key.hasPrefix("Apple") && !key.hasPrefix("com.apple") {
+                defaults.removeObject(forKey: key)
+            }
         }
         BackgroundImage.remove()
     }

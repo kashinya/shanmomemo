@@ -179,7 +179,8 @@ final class FindPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
         }
     }
 
-    private func syncOptionsToControls() {
+    /// 検索のオプションのチェックを、設定に合わせる（設定を初期値に戻したときも）
+    func syncOptionsToControls() {
         let settings = Settings.shared
         findMatchCase.state = settings.matchCase ? .on : .off
         replaceMatchCase.state = settings.matchCase ? .on : .off

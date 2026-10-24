@@ -115,8 +115,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// 前回落ちたとき（強制終了・電源断も）に保存してなかった文書を、そのとき中身で開き直す。
     /// 起動のときに開いた空の「無題」があれば、それを使う
     private func restoreRecoveredDocuments() {
+        // もう 1 つ同じアプリが動いてたら、その控えは生きてる（落ちたんやない）ので触らん
+        if let id = Bundle.main.bundleIdentifier, NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 1 {
+            return
+        }
         for leftover in Recovery.leftovers() {
-            let target = controllers.first(where: { $0.isPristine }) ?? newWindow()
+            // 起動のときに Finder から同じファイルを開いてたら、そのウィンドウに戻す（2 枚にせん）
+            let showing = leftover.record.path.flatMap { controller(showing: URL(fileURLWithPath: $0)) }
+            let target = showing ?? controllers.first(where: { $0.isPristine }) ?? newWindow()
             target.restore(leftover.record, id: leftover.id)
             target.window.makeKeyAndOrderFront(nil)
         }
@@ -138,6 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             controller.applyAllSettings()
         }
         ThemePanelController.shared.syncFromSettings()
+        FindPanelController.shared.syncOptionsToControls()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

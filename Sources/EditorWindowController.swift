@@ -52,6 +52,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     /// 落ちたとき用の控え（Recovery）の名前と、控えを書いたときの revision（控えが無ければ nil）
     private var recoveryID = UUID()
     private var recoveredRevision: Int?
+    /// 閉じたあと（AppDelegate が外すまでの間に、控えや位置を書き直さんように）
+    private var isClosed = false
     /// 中身・文字コード・改行コードが変わるたびに増える
     private var revision = 0
     private var textAttributes: [NSAttributedString.Key: Any] = [:]
@@ -696,6 +698,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         }
 
         replaceAllText(with: text)
+        discardRecovery()   // 前の文書（保存せずに捨てた）の控えを残さん
         fileURL = url
         encoding = loaded.encoding
         lineEnding = loaded.lineEnding
@@ -848,10 +851,13 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             rememberFrame()
             return
         }
-        if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }) {
+        // 覚えた位置がある画面に収める。その画面がもう無かったら、大きさだけ使って今の画面に
+        var screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(frame) })
+        if screen == nil {
             frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+            screen = window.screen ?? NSScreen.main
         }
-        frame = window.constrainFrameRect(frame, to: window.screen ?? NSScreen.main)
+        frame = window.constrainFrameRect(frame, to: screen)
         if frame != window.frame {
             window.setFrame(frame, display: true)
         }
@@ -859,7 +865,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     /// 開いた・保存したファイルのウィンドウなら、今の位置と大きさを覚える（全画面と Windows 2000 風の最大化のときは覚えない）
     private func rememberFrame() {
-        guard let url = fileURL, window.isVisible, !window.styleMask.contains(.fullScreen), !window.isClassicMaximized else { return }
+        guard let url = fileURL, !isClosed, window.isVisible, !window.styleMask.contains(.fullScreen),
+              !window.isClassicMaximized else { return }
         WindowFrames.remember(window.frame, for: url)
     }
 
@@ -867,6 +874,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     /// 保存してない中身が前の控えから変わってたら書く。保存してない状態でなくなったら消す（AppDelegate がときどき呼ぶ）
     func writeRecoveryIfNeeded() {
+        guard !isClosed else { return }
         guard isDirty else {
             if recoveredRevision != nil {
                 Recovery.remove(id: recoveryID)
@@ -875,9 +883,15 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             return
         }
         guard recoveredRevision != revision else { return }
+        let written = revision
+        recoveredRevision = written
         Recovery.write(Recovery.Record(text: textView.string, path: fileURL?.path,
-                                       encoding: encoding.rawValue, lineEnding: lineEnding.rawValue), id: recoveryID)
-        recoveredRevision = revision
+                                       encoding: encoding.rawValue, lineEnding: lineEnding.rawValue), id: recoveryID) { [weak self] ok in
+            // 書けんかったら、次の回にまた書く
+            if !ok, let self = self, self.recoveredRevision == written {
+                self.recoveredRevision = -1
+            }
+        }
     }
 
     /// ふつうに閉じた・終わったとき: 控えを消す
@@ -909,7 +923,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         zoomPercent = 100
         applyTheme()
         applyWordWrap()
-        applyClassicUI()
+        // 枠の付け外しは、変わるときだけ（変わらんのに呼ぶと、Mac の全画面を抜けてしまう）
+        if window.isClassic != Settings.shared.classicUI {
+            applyClassicUI()
+        }
         applySeditMode()
         applyRulers()
         applyStatusBarVisibility()
@@ -1434,6 +1451,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func windowWillClose(_ notification: Notification) {
         rememberFrame()
+        isClosed = true
         discardRecovery()
         AppDelegate.shared.controllerWillClose(self)
     }
@@ -1457,6 +1475,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func windowDidResize(_ notification: Notification) {
         titleBar.refresh()
+        // Windows 2000 風の枠を引っぱったときや ⌘ の拡大など、マウスで枠を引っぱる以外の大きさの変更も覚える
+        if !window.inLiveResize {
+            rememberFrame()
+        }
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {

@@ -59,18 +59,31 @@ enum Recovery {
         return directory?.appendingPathComponent(id.uuidString + ".json")
     }
 
-    static func write(_ record: Record, id: UUID) {
-        guard let directory = directory, let url = url(for: id) else { return }
-        do {
-            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(record).write(to: url, options: .atomic)
-        } catch {
-            // 書けんかったら次の回にまた書く
+    /// 書くのと消すのは、この順番どおりに裏でやる（大きい文書でも、15 秒ごとに手が止まらんように）
+    private static let queue = DispatchQueue(label: "local.memocho.recovery", qos: .utility)
+
+    /// 裏で書いて、書けたかどうかを completion（メインスレッド）で返す
+    static func write(_ record: Record, id: UUID, completion: @escaping (Bool) -> Void) {
+        guard let directory = directory, let url = url(for: id) else {
+            completion(false)
+            return
+        }
+        queue.async {
+            var ok = true
+            do {
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                try JSONEncoder().encode(record).write(to: url, options: .atomic)
+            } catch {
+                ok = false
+            }
+            DispatchQueue.main.async { completion(ok) }
         }
     }
 
+    /// 消す。まだ書いてる途中の控えがあれば、書き終わってから消す（終わるときに呼んでも消し残さんように、待つ）
     static func remove(id: UUID) {
-        if let url = url(for: id) {
+        guard let url = url(for: id) else { return }
+        queue.sync {
             try? FileManager.default.removeItem(at: url)
         }
     }

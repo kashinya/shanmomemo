@@ -215,7 +215,7 @@ final class SeditFunctionBar: NSView {
     /// 80 桁（ズーム 100% で 640pt）入るときは SEDIT と同じ 8 桁ずつを真ん中に。もっと広いときは 1 桁ずつ広げる。
     /// 入らんときは 6 桁ずつ（短い名前）・すき間なしに詰めて、真ん中に
     private var layout: Layout {
-        let cell = Sedit.cellWidth * scale
+        let cell = Sedit.cellWidth * drawScale
         guard bounds.width >= cell * 80 else {
             let span = cell * 6 * 10 - cell   // 最後のキーの後ろのすき間は数えない
             return Layout(slot: cell * 6, groupGap: 0, origin: max(0, ((bounds.width - span) / 2 / cell).rounded() * cell), compact: true)
@@ -235,6 +235,13 @@ final class SeditFunctionBar: NSView {
         }
     }
 
+    /// 描く倍率。ズームで大きくしたとき、短い名前でも幅に入らんかったら入るところまで小さくする（100% より小さくはせん）
+    private var drawScale: CGFloat {
+        guard scale > 1 else { return scale }
+        let fit = bounds.width / (Sedit.cellWidth * (6 * 10 - 1))
+        return min(scale, max(1, fit))
+    }
+
     override var isFlipped: Bool { return true }
     override var isOpaque: Bool { return true }
 
@@ -244,14 +251,14 @@ final class SeditFunctionBar: NSView {
     func itemRect(_ index: Int) -> NSRect {
         let layout = self.layout
         let x = layout.origin + CGFloat(index) * layout.slot + (index >= 5 ? layout.groupGap : 0)
-        return NSRect(x: x, y: 0, width: layout.slot - Sedit.cellWidth * scale, height: bounds.height)
+        return NSRect(x: x, y: 0, width: layout.slot - Sedit.cellWidth * drawScale, height: bounds.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         Sedit.black.setFill()
         bounds.fill()
         let height = bounds.height
-        let scale = self.scale
+        let scale = drawScale
         let cell = Sedit.cellWidth * scale
         let labels = layout.compact ? SeditFunctionBar.shortLabels : SeditFunctionBar.labels
         Sedit.drawPixelText(dot: scale) {
@@ -264,7 +271,8 @@ final class SeditFunctionBar: NSView {
                 labelRect.fill()
                 let text = label.trimmingCharacters(in: .whitespaces)
                 let width = Sedit.textWidth(text, scale: scale)
-                let x = labelRect.minX + ((labelRect.width - width) / 2 / cell).rounded(.down) * cell
+                // 半端なズームで名前が欄より少し広くなっても、左の数字にかぶせない
+                let x = labelRect.minX + max(0, ((labelRect.width - width) / 2 / cell).rounded(.down)) * cell
                 Sedit.drawCell(text, at: x, height: height, background: Sedit.green, scale: scale)
             }
         }
