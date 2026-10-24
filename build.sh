@@ -2,6 +2,7 @@
 # メモ帳.app をビルドする（Intel / Apple シリコン両対応のユニバーサル）
 #   ./build.sh           … build/メモ帳.app を作る
 #   ./build.sh install   … 作ったあと /Applications にコピー
+#   NO_SHANMO_LOGO=1 ./build.sh … SHANMO のロゴなし（アイコンは元の紙だけ、ステータスバーにも出さない）
 # 要るもの: Xcode のコマンドラインツール（xcode-select --install）
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -46,8 +47,14 @@ for ARCH in $ARCHS; do
 done
 
 lipo -create -output "$APP/Contents/MacOS/$EXEC_NAME" "${BINARIES[@]}"
-cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-cp Resources/StatusLogo.png "$APP/Contents/Resources/StatusLogo.png"
+# SHANMO のロゴ（アイコンの紙とステータスバーの左はじ）。ステータスバーは StatusLogo.png が無ければ出さない
+if [ -n "${NO_SHANMO_LOGO:-}" ]; then
+  echo "==> SHANMO のロゴなし"
+  cp Resources/AppIcon-plain.icns "$APP/Contents/Resources/AppIcon.icns"
+else
+  cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+  cp Resources/StatusLogo.png "$APP/Contents/Resources/StatusLogo.png"
+fi
 
 # 等幅フォントモード用の PC-9800 フォント（retro-type.com の配布物）。
 # 配布条件が書かれてないのでリポジトリには入れず、ビルドのときに落としてアプリに埋め込む。

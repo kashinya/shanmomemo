@@ -43,8 +43,10 @@ jobs:
 
       - name: Check icon
         run: |
-          iconutil --convert iconset --output "$RUNNER_TEMP/AppIcon.iconset" Resources/AppIcon.icns
-          ls "$RUNNER_TEMP/AppIcon.iconset"
+          for ICON in AppIcon AppIcon-plain; do
+            iconutil --convert iconset --output "$RUNNER_TEMP/$ICON.iconset" "Resources/$ICON.icns"
+            ls "$RUNNER_TEMP/$ICON.iconset"
+          done
 
       - name: Zip app
         if: success()
@@ -56,6 +58,20 @@ jobs:
           name: Memocho-app
           path: Memocho.zip
           if-no-files-found: error
+
+      # ロゴなしのビルド（こっちもアップロードせん）
+      - name: Build without SHANMO logo (arm64 only)
+        env:
+          ARCHS: arm64
+          NO_PC98_FONT: "1"
+          NO_SHANMO_LOGO: "1"
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+          RES="build/メモ帳.app/Contents/Resources"
+          if [ -e "$RES/StatusLogo.png" ]; then echo "::error::ロゴなしやのに StatusLogo.png が入ってる" >&2; exit 1; fi
+          cmp "$RES/AppIcon.icns" Resources/AppIcon-plain.icns
+          codesign --verify --strict --verbose=1 "build/メモ帳.app"
 
       # フォントを落として埋め込む流れと、埋め込んだあとの署名が通るか（こっちはアップロードせん）
       - name: Build with PC-9800 font (arm64 only)

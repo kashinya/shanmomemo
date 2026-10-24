@@ -17,6 +17,7 @@ cd Memocho                  # この zip を展開したフォルダ
 ```
 
 `./build.sh` だけなら `build/メモ帳.app` ができるだけ（好きな場所に置けばいい）。
+SHANMO のロゴ（アイコンとステータスバー）が要らんときは `NO_SHANMO_LOGO=1 ./build.sh install`。アイコンは元の紙だけのになる（Dock や Finder が前のアイコンを覚えてて、すぐ変わらんことがある）。
 Intel Mac と Apple シリコンの両方で動くユニバーサル版になる。macOS 10.15 以降（Apple シリコンは 11 以降）。
 
 自分の Mac でビルドしたアプリなので、Gatekeeper の「開発元を確認できません」は出ない。
@@ -50,7 +51,7 @@ Finder で .txt ファイルを選んで ⌘I →「このアプリケーショ�
 | — | 表示 > 行番号 / 桁ルーラー | 本文の左に行番号、上に MIFES みたいな桁ルーラー（下の「行番号と桁ルーラー」） |
 | — | マクロ | キーボードマクロ（下の「キーボードマクロ」） |
 | — | 編集 > ファイルを挿入… | 選んだファイルの中身をカーソルの位置に入れる（文字コードは自動判定か指定） |
-| 表示 > ステータス バー | 同じ | 行・列、ズーム、改行コード、文字コードを表示。左はじに SHANMO のロゴ（本文 500pt 幅でも入る。それより狭いと隠れる） |
+| 表示 > ステータス バー | 同じ | 行・列、ズーム、改行コード、文字コードを表示。左はじに SHANMO のロゴ（本文 500pt 幅でも入る。それより狭いと隠れる。`NO_SHANMO_LOGO=1` でビルドすると出ない） |
 | 設定 > アプリのテーマ | 表示 > テーマ | システム設定に合わせる / ライト / ダーク / Panic Light / Panic Dark / Panic Palette / Neon（下の「テーマ」） |
 | ファイルをウィンドウにドロップ | 同じ | 今のウィンドウで開く |
 
@@ -176,5 +177,6 @@ rm -rf "/Applications/メモ帳.app"
 ## 中身
 
 - `Sources/` … Swift（AppKit）。Xcode プロジェクトなし、`build.sh` が swiftc を直接呼ぶ
-- `Resources/AppIcon.icns` … アイコン
+- `Resources/AppIcon.icns` … アイコン（SHANMO のロゴ入り）。`AppIcon-plain.icns` はロゴなし（`NO_SHANMO_LOGO=1` のとき）
+- `Resources/StatusLogo.png` … ステータスバーのロゴ
 - アプリ名を変えたいとき: `APP_NAME=Notepad ./build.sh`
