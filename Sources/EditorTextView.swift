@@ -54,6 +54,34 @@ final class EditorTextView: NSTextView {
         super.doCommand(by: selector)
     }
 
+    // MARK: - 変換候補の窓の位置
+
+    /// IME に返す字の四角を、見えてるところに収める。折り返さないときは行の幅が無限大なので、変換中の字が行の終わりにあって
+    /// 改行まで含めた問い合わせが来ると、四角が画面の外まで伸びて、候補の窓（2 回目のスペースで出る一覧）が画面の右端へ飛んでた。
+    /// 普通の答えはそのまま返し、おかしいときだけ詰める
+    override func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        var query = range
+        if hasMarkedText(), query.location != NSNotFound {
+            let marked = markedRange()
+            // 変換中の字から始まって、うしろ（改行・次の行）まではみ出す問い合わせは、変換中の字の終わりで切る
+            if query.location >= marked.location, query.location < NSMaxRange(marked), NSMaxRange(query) > NSMaxRange(marked) {
+                query.length = NSMaxRange(marked) - query.location
+            }
+        }
+        let rect = super.firstRect(forCharacterRange: query, actualRange: actualRange)
+        guard rect.origin.x.isFinite, rect.origin.y.isFinite, rect.width.isFinite, rect.height.isFinite else {
+            let caret = query.location == NSNotFound ? selectedRange().location : query.location
+            return super.firstRect(forCharacterRange: NSRange(location: caret, length: 0), actualRange: actualRange)
+        }
+        guard let window = window else { return rect }
+        let visible = window.convertToScreen(convert(visibleRect, to: nil))
+        guard !visible.isEmpty, rect.maxX > visible.maxX + 1 else { return rect }   // 普通はここで帰る
+        var fixed = rect
+        fixed.origin.x = min(max(rect.minX, visible.minX), visible.maxX - 1)
+        fixed.size.width = max(0, min(rect.maxX, visible.maxX) - fixed.minX)
+        return fixed
+    }
+
     // MARK: - SEDIT 風の印
 
     override func draw(_ dirtyRect: NSRect) {
