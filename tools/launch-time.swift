@@ -17,15 +17,17 @@ guard let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/I
     exit(1)
 }
 
+// 実行ファイルを直接起動すると、CI では applicationDidFinishLaunching まで来んかったので、
+// ふだんと同じく LaunchServices（open コマンド）で起動する
+let logURL = FileManager.default.temporaryDirectory.appendingPathComponent("memocho-launch-probe.log")
+
 var times: [Double] = []
 for run in 1...runs {
+    try? FileManager.default.removeItem(at: logURL)
+    FileManager.default.createFile(atPath: logURL.path, contents: nil)
     let process = Process()
-    process.executableURL = app.appendingPathComponent("Contents/MacOS/\(executable)")
-    var environment = ProcessInfo.processInfo.environment
-    environment["MEMOCHO_LAUNCH_PROBE"] = "1"
-    process.environment = environment
-    let errorPipe = Pipe()
-    process.standardError = errorPipe
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+    process.arguments = ["-W", "-n", "-F", "--env", "MEMOCHO_LAUNCH_PROBE=1", "--stderr", logURL.path, app.path]
     do {
         try process.run()
     } catch {
@@ -38,9 +40,14 @@ for run in 1...runs {
     }
     if process.isRunning {
         process.terminate()
+        let kill = Process()
+        kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+        kill.arguments = ["-9", "-f", "Contents/MacOS/\(executable)"]
+        try? kill.run()
+        kill.waitUntilExit()
     }
     process.waitUntilExit()
-    let output = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    let output = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
     // 「launch-probe 区切り: ミリ秒」の行を拾う。window まで来てたら測れた
     let marks = output.split(separator: "\n").compactMap { line -> (String, Double)? in
         guard line.hasPrefix("launch-probe "), let colon = line.firstIndex(of: ":"),
