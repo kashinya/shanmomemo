@@ -72,11 +72,7 @@ jobs:
             echo "$ARCH: $(stat -f %z "$RUNNER_TEMP/Memocho-$ARCH") B"
           done
           xcrun swiftc -O -o "$RUNNER_TEMP/launch-time" tools/launch-time.swift
-          "$RUNNER_TEMP/launch-time" "$APP" 2
-          xcrun swiftc -O -o "$RUNNER_TEMP/font-time" tools/font-time.swift
-          for NAME in available ctnames Osaka-Mono; do
-            perl -e 'alarm shift; exec @ARGV' 20 "$RUNNER_TEMP/font-time" "$NAME" || echo "$NAME: 20 秒で終わらんかった"
-          done
+          "$RUNNER_TEMP/launch-time" "$APP" 6
 
       # ロゴなしのビルド（こっちもアップロードせん）
       - name: Build without SHANMO logo (arm64 only)

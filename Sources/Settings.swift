@@ -87,7 +87,7 @@ final class Settings {
     static var monospaceFont: NSFont {
         let size: CGFloat = 16
         if let pc98 = NSFont(name: pc98FontName, size: size) { return pc98 }
-        if let osaka = NSFont(name: "Osaka-Mono", size: size) { return osaka }
+        if let osaka = osakaMono(size: size) { return osaka }
         if let fixed = NSFont.userFixedPitchFont(ofSize: size) { return fixed }
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
     }
@@ -95,9 +95,21 @@ final class Settings {
     static var defaultFont: NSFont {
         let size: CGFloat = 13
         // Osaka−等幅が入ってたら半角:全角がきっちり 1:2 になるので優先
-        if let osaka = NSFont(name: "Osaka-Mono", size: size) { return osaka }
+        if let osaka = osakaMono(size: size) { return osaka }
         if let fixed = NSFont.userFixedPitchFont(ofSize: size) { return fixed }
         return NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
+    }
+
+    /// Osaka−等幅は、Mac に入ってる（ダウンロード済みの）ときだけ使う。
+    /// macOS の「あとから落とせるフォント」なので、入ってないのに名前で引くと、macOS が落としに行って待たされる
+    /// （ネットにつながらん Mac では返ってこず、起動が止まる。CI で 20 秒以上返ってこんかった）
+    private static let isOsakaMonoInstalled: Bool = {
+        let names = (CTFontManagerCopyAvailablePostScriptNames() as? [String]) ?? []
+        return names.contains("Osaka-Mono")
+    }()
+
+    private static func osakaMono(size: CGFloat) -> NSFont? {
+        return isOsakaMonoInstalled ? NSFont(name: "Osaka-Mono", size: size) : nil
     }
 
     var font: NSFont {
