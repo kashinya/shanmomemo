@@ -137,6 +137,8 @@ enum MainMenu {
         viewMenu.addItem(item("Mac のメニューバーと Dock を隠す", #selector(AppDelegate.toggleHideMacMenuBar(_:))))
         viewMenu.addItem(NSMenuItem.separator())
         viewMenu.addItem(item("SEDIT 風", #selector(AppDelegate.toggleSeditMode(_:))))
+        viewMenu.addItem(NSMenuItem.separator())
+        viewMenu.addItem(item("設定をすべて初期値に戻す…", #selector(AppDelegate.resetAllSettings(_:))))
         add(viewMenu, to: mainMenu)
 
         // マクロ（キーボードマクロ）

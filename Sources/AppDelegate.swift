@@ -6,6 +6,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     private(set) var controllers: [EditorWindowController] = []
     private var keyMonitor: Any?
+    private var recoveryTimer: Timer?
 
     override init() {
         super.init()
@@ -52,6 +53,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         applyPresentationOptions()
+        restoreRecoveredDocuments()
+        // 保存してない文書は、ときどき控えを書いておく（落ちたとき用）
+        recoveryTimer = Timer.scheduledTimer(withTimeInterval: Recovery.interval, repeats: true) { [weak self] _ in
+            self?.controllers.forEach { $0.writeRecoveryIfNeeded() }
+        }
         // 念のため。起動時に何も開かれへんかったら「無題」を 1 枚出す
         DispatchQueue.main.async {
             if self.controllers.isEmpty {
@@ -98,6 +104,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             }
         }
         return .terminateNow
+    }
+
+    /// ふつうに終わるときは、落ちたとき用の控えを全部消す
+    func applicationWillTerminate(_ notification: Notification) {
+        recoveryTimer?.invalidate()
+        controllers.forEach { $0.discardRecovery() }
+    }
+
+    /// 前回落ちたとき（強制終了・電源断も）に保存してなかった文書を、そのとき中身で開き直す。
+    /// 起動のときに開いた空の「無題」があれば、それを使う
+    private func restoreRecoveredDocuments() {
+        for leftover in Recovery.leftovers() {
+            let target = controllers.first(where: { $0.isPristine }) ?? newWindow()
+            target.restore(leftover.record, id: leftover.id)
+            target.window.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    /// ［表示］→［設定をすべて初期値に戻す…］
+    @objc func resetAllSettings(_ sender: Any?) {
+        let alert = NSAlert()
+        alert.messageText = "設定をすべて初期値に戻しますか?"
+        alert.informativeText = "テーマ・背景画像・フォント・表示の切り替え・検索のオプション・ファイルごとのウィンドウの位置と大きさなど、"
+            + "このアプリが覚えてることを全部消して、入れたときの状態に戻します。開いてる文書はそのままです。"
+        alert.addButton(withTitle: "初期値に戻す")
+        alert.addButton(withTitle: "キャンセル").keyEquivalent = "\u{1b}"
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        Settings.shared.resetAll()
+        applyPresentationOptions()
+        NSApp.appearance = Settings.shared.theme.appearance
+        for controller in controllers {
+            controller.applyAllSettings()
+        }
+        ThemePanelController.shared.syncFromSettings()
     }
 
     func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool {

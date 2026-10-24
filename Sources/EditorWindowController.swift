@@ -1,6 +1,6 @@
 import AppKit
 
-/// 1 ウィンドウ = 1 文書。タブなし、自動保存なし、自動復元なし。
+/// 1 ウィンドウ = 1 文書。タブなし、自動保存なし、自動復元なし（落ちたときの控えから戻すのだけはある）。
 final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation, RulerSource {
 
     static let minZoom = 10
@@ -49,6 +49,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private(set) var isDirty = false
 
     private var zoomPercent = 100
+    /// 落ちたとき用の控え（Recovery）の名前と、控えを書いたときの revision（控えが無ければ nil）
+    private var recoveryID = UUID()
+    private var recoveredRevision: Int?
+    /// 中身・文字コード・改行コードが変わるたびに増える
+    private var revision = 0
     private var textAttributes: [NSAttributedString.Key: Any] = [:]
     private var caretLocation = 0
     private var lineCache: (location: Int, line: Int)?
@@ -665,6 +670,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     private func setDirty(_ dirty: Bool) {
+        if dirty {
+            revision &+= 1   // 落ちたとき用の控えを書き直す目印
+        }
         guard isDirty != dirty else { return }
         isDirty = dirty
         updateTitle()
@@ -697,6 +705,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         lineEnding = loaded.lineEnding
         isDirty = appendedLog
         updateTitle()
+        applyRememberedFrame(for: url)
 
         let caret = appendedLog ? (text as NSString).length : 0
         textView.setSelectedRange(NSRange(location: caret, length: 0))
@@ -830,7 +839,85 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         isDirty = false
         updateTitle()
         updateStatusNow()
+        rememberFrame()
+        writeRecoveryIfNeeded()   // 保存したので控えを消す
         return true
+    }
+
+    // MARK: - ファイルごとのウィンドウの位置と大きさ
+
+    /// このファイルを前に開いた・保存したときの位置と大きさにする。つながってない画面の位置やったら、大きさだけ使う
+    private func applyRememberedFrame(for url: URL) {
+        guard var frame = WindowFrames.frame(for: url), !window.styleMask.contains(.fullScreen), !window.isClassicMaximized else {
+            rememberFrame()
+            return
+        }
+        if !NSScreen.screens.contains(where: { $0.visibleFrame.intersects(frame) }) {
+            frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+        }
+        frame = window.constrainFrameRect(frame, to: window.screen ?? NSScreen.main)
+        if frame != window.frame {
+            window.setFrame(frame, display: true)
+        }
+    }
+
+    /// 開いた・保存したファイルのウィンドウなら、今の位置と大きさを覚える（全画面と Windows 2000 風の最大化のときは覚えない）
+    private func rememberFrame() {
+        guard let url = fileURL, window.isVisible, !window.styleMask.contains(.fullScreen), !window.isClassicMaximized else { return }
+        WindowFrames.remember(window.frame, for: url)
+    }
+
+    // MARK: - 落ちたとき用の控え
+
+    /// 保存してない中身が前の控えから変わってたら書く。保存してない状態でなくなったら消す（AppDelegate がときどき呼ぶ）
+    func writeRecoveryIfNeeded() {
+        guard isDirty else {
+            if recoveredRevision != nil {
+                Recovery.remove(id: recoveryID)
+                recoveredRevision = nil
+            }
+            return
+        }
+        guard recoveredRevision != revision else { return }
+        Recovery.write(Recovery.Record(text: textView.string, path: fileURL?.path,
+                                       encoding: encoding.rawValue, lineEnding: lineEnding.rawValue), id: recoveryID)
+        recoveredRevision = revision
+    }
+
+    /// ふつうに閉じた・終わったとき: 控えを消す
+    func discardRecovery() {
+        Recovery.remove(id: recoveryID)
+        recoveredRevision = nil
+    }
+
+    /// 前回落ちたときの控えから中身を戻す。保存してない状態（*）にして、元のファイルがあればそこへ上書き保存できる
+    func restore(_ record: Recovery.Record, id: UUID) {
+        replaceAllText(with: record.text)
+        fileURL = record.path.map { URL(fileURLWithPath: $0) }
+        encoding = TextEncoding(rawValue: record.encoding) ?? .utf8
+        lineEnding = LineEnding(rawValue: record.lineEnding) ?? .lf
+        recoveryID = id          // 控えはこのウィンドウが引き継ぐ（閉じたら消える）
+        isDirty = true
+        recoveredRevision = revision
+        updateTitle()
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        caretLocation = 0
+        updateStatusNow()
+        if let url = fileURL {
+            applyRememberedFrame(for: url)
+        }
+    }
+
+    /// ［表示］→［設定をすべて初期値に戻す…］のあと: 全部を設定に合わせ直す。ズームも 100% に戻す
+    func applyAllSettings() {
+        zoomPercent = 100
+        applyTheme()
+        applyWordWrap()
+        applyClassicUI()
+        applySeditMode()
+        applyRulers()
+        applyStatusBarVisibility()
+        updateStatusNow()
     }
 
     private func showError(_ message: String, _ error: Error) {
@@ -1350,7 +1437,17 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func windowWillClose(_ notification: Notification) {
+        rememberFrame()
+        discardRecovery()
         AppDelegate.shared.controllerWillClose(self)
+    }
+
+    func windowDidMove(_ notification: Notification) {
+        rememberFrame()
+    }
+
+    func windowDidEndLiveResize(_ notification: Notification) {
+        rememberFrame()
     }
 
     // Windows 2000 風のタイトルバーは、アクティブかどうかで色が変わり、最大化でボタンの絵が変わる

@@ -27,8 +27,8 @@ enum AppInfo {
     }
 }
 
-/// Windows のメモ帳がレジストリに覚えてた程度のことだけ覚える。
-/// 開いてた文書やウィンドウの中身は一切保存しない。
+/// Windows のメモ帳がレジストリに覚えてた程度のことだけ覚える（と、ファイルごとのウィンドウの位置と大きさ）。
+/// 開いてた文書やウィンドウの中身は保存しない（落ちたとき用の控えは別: Recovery）。
 final class Settings {
     static let shared = Settings()
 
@@ -54,6 +54,14 @@ final class Settings {
         static let showLineNumbers = "ShowLineNumbers"
         static let showColumnRuler = "ShowColumnRuler"
         static let showCharacterCount = "ShowCharacterCount"
+    }
+
+    /// このアプリが覚えてることを全部消して、入れたときの状態に戻す（ファイルごとのウィンドウの位置・背景画像も）
+    func resetAll() {
+        if let domain = Bundle.main.bundleIdentifier {
+            defaults.removePersistentDomain(forName: domain)
+        }
+        BackgroundImage.remove()
     }
 
     private init() {
