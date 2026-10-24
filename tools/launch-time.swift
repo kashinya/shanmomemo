@@ -1,7 +1,8 @@
-// 起動の速さを測る（CI 用）。アプリの実行ファイルを直接起動して、ウィンドウが画面に出るまでの時間を何回か測る。
+// 起動の速さを測る（CI 用）。アプリを環境変数 MEMOCHO_LAUNCH_PROBE 付きで何回か起動して、
+// プロセスが始まってから最初のウィンドウを描き終わるまでの時間（アプリが自分で測って出す）を集める。
 //   swiftc -O -o launch-time tools/launch-time.swift && ./launch-time "build/メモ帳.app" 6
 // 1 回目はビルドしたてのアプリを初めて起動したとき（macOS の署名の確認なども入る）。2 回目からが普段の起動
-import AppKit
+import Foundation
 
 let arguments = CommandLine.arguments
 guard arguments.count >= 2 else {
@@ -15,47 +16,38 @@ guard let info = NSDictionary(contentsOf: app.appendingPathComponent("Contents/I
     print("Info.plist が読めない: \(app.path)")
     exit(1)
 }
-let executableURL = app.appendingPathComponent("Contents/MacOS/\(executable)")
-
-/// その PID のふつうのウィンドウが画面に出てるか
-func hasWindow(_ pid: pid_t) -> Bool {
-    guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
-            as? [[String: Any]] else { return false }
-    return list.contains {
-        ($0[kCGWindowOwnerPID as String] as? Int).map { pid_t($0) } == pid && ($0[kCGWindowLayer as String] as? Int) == 0
-    }
-}
-
-func elapsedMilliseconds(since start: DispatchTime) -> Double {
-    return Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
-}
 
 var times: [Double] = []
 for run in 1...runs {
     let process = Process()
-    process.executableURL = executableURL
-    let start = DispatchTime.now()
+    process.executableURL = app.appendingPathComponent("Contents/MacOS/\(executable)")
+    var environment = ProcessInfo.processInfo.environment
+    environment["MEMOCHO_LAUNCH_PROBE"] = "1"
+    process.environment = environment
+    let errorPipe = Pipe()
+    process.standardError = errorPipe
     do {
         try process.run()
     } catch {
         print("起動できない: \(error)")
         exit(1)
     }
-    var shown: Double?
-    while process.isRunning, elapsedMilliseconds(since: start) < 20_000 {
-        if hasWindow(process.processIdentifier) {
-            shown = elapsedMilliseconds(since: start)
-            break
-        }
-        usleep(5_000)
+    let deadline = Date().addingTimeInterval(30)
+    while process.isRunning, Date() < deadline {
+        usleep(10_000)
     }
-    kill(process.processIdentifier, SIGKILL)
+    if process.isRunning {
+        process.terminate()
+    }
     process.waitUntilExit()
-    if let shown = shown {
-        times.append(shown)
-        print(String(format: "%ld 回目: %.0f ms", run, shown))
+    let output = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    if let line = output.split(separator: "\n").first(where: { $0.hasPrefix("launch-probe: ") }),
+       let value = Double(line.dropFirst("launch-probe: ".count)) {
+        times.append(value)
+        print(String(format: "%ld 回目: %.0f ms", run, value))
     } else {
-        print("\(run) 回目: ウィンドウが出なかった")
+        print("\(run) 回目: 測れなかった（終了コード \(process.terminationStatus)）")
+        print(output.suffix(2000))
     }
     usleep(500_000)
 }
