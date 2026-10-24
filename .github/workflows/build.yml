@@ -73,6 +73,8 @@ jobs:
           done
           xcrun swiftc -O -o "$RUNNER_TEMP/launch-time" tools/launch-time.swift
           "$RUNNER_TEMP/launch-time" "$APP" 6
+          xcrun swiftc -O -o "$RUNNER_TEMP/font-time" tools/font-time.swift
+          "$RUNNER_TEMP/font-time"
 
       # ロゴなしのビルド（こっちもアップロードせん）
       - name: Build without SHANMO logo (arm64 only)
