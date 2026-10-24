@@ -72,6 +72,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
                                      styleMask: [.titled, .closable, .miniaturizable, .resizable],
                                      backing: .buffered,
                                      defer: false)
+        LaunchProbe.mark("nsWindow")
 
         let barHeight = StatusBarView.height
         let scroll = NSScrollView(frame: NSRect(x: 0, y: barHeight,
@@ -93,6 +94,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
         setUpWindow()
         setUpTextView()
+        LaunchProbe.mark("textView")
         applyTheme()
         applyWordWrap()
         applyClassicUI()

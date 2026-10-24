@@ -66,6 +66,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationOpenUntitledFile(_ sender: NSApplication) -> Bool {
+        LaunchProbe.mark("openUntitled")
         if controllers.isEmpty {
             newWindow()
         }
