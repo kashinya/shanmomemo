@@ -30,12 +30,14 @@ enum MainMenu {
         // Windows の Ctrl+Shift+N の癖で ⇧⌘N を押しても同じ（メニューには出さない）
         fileMenu.addItem(hidden(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n", [.command, .shift])))
         fileMenu.addItem(item("開く…", #selector(EditorWindowController.fileOpen(_:)), "o"))
+        fileMenu.addItem(item("iCloud Drive から開く…", #selector(EditorWindowController.fileOpenFromICloud(_:))))
         let reopenItem = NSMenuItem(title: "文字コードを指定して開き直す", action: nil, keyEquivalent: "")
         reopenItem.submenu = encodingMenu(title: "文字コードを指定して開き直す",
                                           action: #selector(EditorWindowController.reopenWithEncoding(_:)))
         fileMenu.addItem(reopenItem)
         fileMenu.addItem(item("上書き保存", #selector(EditorWindowController.fileSave(_:)), "s"))
         fileMenu.addItem(item("名前を付けて保存…", #selector(EditorWindowController.fileSaveAs(_:)), "s", [.command, .shift]))
+        fileMenu.addItem(item("iCloud Drive に保存…", #selector(EditorWindowController.fileSaveToICloud(_:))))
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(item("ページ設定…", #selector(NSApplication.runPageLayout(_:)), "p", [.command, .shift]))
         fileMenu.addItem(item("印刷…", #selector(EditorWindowController.filePrint(_:)), "p"))

@@ -72,7 +72,9 @@ final class LineNumberRuler: NSRulerView {
         let style = source.rulerStyle
         switch style {
         case .mac:
-            // 地の色は後ろの EditorBackgroundView が塗ってる（重ねると半透明のとき帯だけ濃くなる）ので、薄く色を足すだけ
+            // 透けさせない（今の NSScrollView はルーラーを本文の上に重ねるので、透けるとスクロールした字が見える）
+            source.rulerBackground.setFill()
+            bounds.fill()
             source.rulerText.withAlphaComponent(0.05).setFill()
             bounds.fill()
             NSColor.separatorColor.setFill()
@@ -85,7 +87,8 @@ final class LineNumberRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: bounds.maxX - 1, y: dirtyRect.minY, width: 1, height: dirtyRect.height).fill()
         case .sedit:
-            break   // 地は後ろの EditorBackgroundView（黒）
+            Sedit.black.setFill()   // 透けさせない
+            bounds.fill()
         }
 
         guard let textView = clientView as? NSTextView, let layoutManager = textView.layoutManager,
@@ -177,7 +180,9 @@ final class ColumnRuler: NSRulerView {
         let style = source.rulerStyle
         switch style {
         case .mac:
-            // 地の色は後ろの EditorBackgroundView が塗ってる（重ねると半透明のとき帯だけ濃くなる）ので、薄く色を足すだけ
+            // 透けさせない（今の NSScrollView はルーラーを本文の上に重ねるので、透けるとスクロールした字が見える）
+            source.rulerBackground.setFill()
+            bounds.fill()
             source.rulerText.withAlphaComponent(0.05).setFill()
             bounds.fill()
             NSColor.separatorColor.setFill()
@@ -190,7 +195,8 @@ final class ColumnRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: dirtyRect.minX, y: bounds.maxY - 1, width: dirtyRect.width, height: 1).fill()
         case .sedit:
-            break   // 地は後ろの EditorBackgroundView（黒）
+            Sedit.black.setFill()   // 透けさせない
+            bounds.fill()
         }
 
         guard let textView = clientView as? NSTextView, let container = textView.textContainer else { return }

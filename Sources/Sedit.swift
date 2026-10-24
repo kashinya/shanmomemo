@@ -151,13 +151,13 @@ final class SeditStatusLine: NSView {
         let rightWidth = width(segments)
         // 場所が長いときは頭を「…」にして、右の欄を押し出さない
         var shownPath = path
-        let available = bounds.width - rightWidth - Sedit.cellWidth * 2
+        let available = bounds.width - rightWidth - Sedit.cellWidth * 3
         while !shownPath.isEmpty, Sedit.textWidth(shownPath) > available {
             shownPath = "…" + shownPath.dropFirst(shownPath.hasPrefix("…") ? 2 : 1)
             if shownPath == "…" { break }
         }
         Sedit.drawPixelText {
-            let pathEnd = Sedit.drawCell(shownPath, at: 0, height: height, background: Sedit.white)
+            let pathEnd = Sedit.drawCell(shownPath, at: Sedit.cellWidth, height: height, background: Sedit.white)   // 左に水色 1 桁
             var x = max(pathEnd + Sedit.cellWidth * 2, bounds.width - rightWidth)
             for (text, background, foreground) in segments {
                 x = Sedit.drawCell(text, at: x, height: height, background: background, foreground: foreground)
@@ -172,9 +172,25 @@ final class SeditFunctionBar: NSView {
     /// 幅が 640 に足りんときの短い名前（4 桁）
     static let shortLabels = ["切取", "複写", "貼付", "挿入", "ｺﾝﾄ", "検索", "次検", "置換", "ｼﾞｬﾝ", "終了"]
 
-    /// SEDIT と同じ 8 桁ずつ（640pt）入るか。入らんときは 6 桁ずつ・すき間なしに詰める
-    private var isCompact: Bool {
-        return bounds.width < Sedit.cellWidth * 80
+    /// 並べ方: 1 つぶんの幅（数字 1 桁 + 名前 + すき間 1 桁）と、5 と 6 のあいだのすき間、左端
+    private struct Layout {
+        let slot: CGFloat
+        let groupGap: CGFloat
+        let origin: CGFloat
+        let compact: Bool
+    }
+
+    /// 80 桁（640pt）入るときは SEDIT と同じ 8 桁ずつを真ん中に。もっと広いときは 1 桁ずつ広げる。
+    /// 入らんときは 6 桁ずつ（短い名前）・すき間なしに詰めて、真ん中に
+    private var layout: Layout {
+        let cell = Sedit.cellWidth
+        guard bounds.width >= cell * 80 else {
+            let span = cell * 6 * 10
+            return Layout(slot: cell * 6, groupGap: 0, origin: max(0, ((bounds.width - span) / 2 / cell).rounded(.down) * cell), compact: true)
+        }
+        let slot = (bounds.width / 10 / cell).rounded(.down) * cell
+        let span = slot * 10   // 最後のすき間のぶんを 5 と 6 のあいだに回すので、ちょうど 10 個ぶん
+        return Layout(slot: slot, groupGap: cell, origin: ((bounds.width - span) / 2 / cell).rounded(.down) * cell, compact: false)
     }
 
     /// 押されたキーの番号（1〜10）
@@ -185,27 +201,31 @@ final class SeditFunctionBar: NSView {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { return true }
 
-    /// 1 つ 8 桁（数字 1 + 名前 6 + すき間 1）。5 と 6 のあいだは 1 桁あける。
-    /// 狭いときは 6 桁（数字 1 + 短い名前 4 + すき間 1）
+    /// i 番目のキー（数字 + 名前、すき間は含まない）
     func itemRect(_ index: Int) -> NSRect {
-        let cell = Sedit.cellWidth
-        if isCompact {
-            return NSRect(x: CGFloat(index) * cell * 6, y: 0, width: cell * 5, height: bounds.height)
-        }
-        let x = CGFloat(index) * cell * 8 + (index >= 5 ? cell : 0)
-        return NSRect(x: x, y: 0, width: cell * 7, height: bounds.height)
+        let layout = self.layout
+        let x = layout.origin + CGFloat(index) * layout.slot + (index >= 5 ? layout.groupGap : 0)
+        return NSRect(x: x, y: 0, width: layout.slot - Sedit.cellWidth, height: bounds.height)
     }
 
     override func draw(_ dirtyRect: NSRect) {
         Sedit.black.setFill()
         bounds.fill()
         let height = bounds.height
+        let cell = Sedit.cellWidth
+        let labels = layout.compact ? SeditFunctionBar.shortLabels : SeditFunctionBar.labels
         Sedit.drawPixelText {
-            let labels = isCompact ? SeditFunctionBar.shortLabels : SeditFunctionBar.labels
             for (index, label) in labels.enumerated() {
                 let rect = itemRect(index)
-                let digitEnd = Sedit.drawCell(String((index + 1) % 10), at: rect.minX, height: height, background: Sedit.yellow)
-                Sedit.drawCell(label, at: digitEnd, height: height, background: Sedit.green)
+                Sedit.drawCell(String((index + 1) % 10), at: rect.minX, height: height, background: Sedit.yellow)
+                // 名前の欄は広げたぶん緑を伸ばして、字は真ん中に
+                let labelRect = NSRect(x: rect.minX + cell, y: 0, width: rect.width - cell, height: height)
+                Sedit.green.setFill()
+                labelRect.fill()
+                let text = label.trimmingCharacters(in: .whitespaces)
+                let width = Sedit.textWidth(text)
+                let x = labelRect.minX + ((labelRect.width - width) / 2 / cell).rounded(.down) * cell
+                Sedit.drawCell(text, at: x, height: height, background: Sedit.green)
             }
         }
     }

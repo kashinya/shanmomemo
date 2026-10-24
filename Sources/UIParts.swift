@@ -305,8 +305,19 @@ struct SaveChoice {
 }
 
 enum FilePanels {
-    static func runOpen() -> OpenChoice? {
+    /// iCloud Drive の場所（システム設定で iCloud Drive を使ってるとき）。
+    /// アプリ専用の iCloud の入れ物は有料の開発者登録と署名が要るので、iCloud Drive の普通のフォルダを使う
+    static var iCloudDrive: URL {
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+    }
+
+    /// directory: 最初に開く場所（nil = いつもの場所）
+    static func runOpen(directory: URL? = nil) -> OpenChoice? {
         let panel = NSOpenPanel()
+        if let directory = directory {
+            panel.directoryURL = directory
+        }
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false

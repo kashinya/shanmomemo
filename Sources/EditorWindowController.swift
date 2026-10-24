@@ -191,8 +191,29 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     // MARK: - 行番号・桁ルーラー（RulerSource）
 
     /// ［表示］→［行番号］［桁ルーラー］を出す／隠す
+    /// 本文のまわりの余白。SEDIT 風は上は 0、左は行番号を出してないときだけ半角 4 桁ぶん（行番号を出してるときくらい）あける
+    private func updateTextInsets() {
+        let settings = Settings.shared
+        let inset: NSSize
+        if settings.seditMode {
+            let cell = (((textAttributes[.font] as? NSFont)?.pointSize ?? 16) / 2).rounded()
+            inset = NSSize(width: settings.showLineNumbers ? 0 : cell * 4, height: 0)
+        } else {
+            inset = NSSize(width: 4, height: 4)
+        }
+        if textView.textContainerInset != inset {
+            textView.textContainerInset = inset
+        }
+        let padding: CGFloat = settings.seditMode ? 0 : 2
+        if textContainer.lineFragmentPadding != padding {
+            textContainer.lineFragmentPadding = padding
+        }
+    }
+
     func applyRulers() {
         let settings = Settings.shared
+        updateTextInsets()
+        updateSeditWrapWidth()
         scrollView.hasVerticalRuler = settings.showLineNumbers
         scrollView.hasHorizontalRuler = settings.showColumnRuler
         scrollView.rulersVisible = settings.showLineNumbers || settings.showColumnRuler
@@ -220,8 +241,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         return (textAttributes[.font] as? NSFont) ?? Settings.shared.editorFont
     }
 
+    /// ルーラーの地。本文が半透明でもルーラーは透けさせない
     var rulerBackground: NSColor {
-        return activeTheme.background.withAlphaComponent(Settings.shared.backgroundOpacity)
+        return activeTheme.background.withAlphaComponent(1)
     }
 
     var rulerText: NSColor {
@@ -347,6 +369,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.beginEditing()
         textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
         textStorage.endEditing()
+        updateTextInsets()       // SEDIT 風の左の余白は半角 4 桁ぶん（ズームで変わる）
         updateSeditWrapWidth()   // ズームで ↓ の幅が変わる
         refreshRulers()          // 行番号と桁の幅もフォントに合わせる
     }
@@ -488,9 +511,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             }
         }
         textView.showsSeditMarks = sedit
-        // SEDIT は画面の左端・上端から字が始まる
-        textView.textContainerInset = sedit ? .zero : NSSize(width: 4, height: 4)
-        textContainer.lineFragmentPadding = sedit ? 0 : 2
         totalLinesCache = nil
         updateWindowAppearance()
         applyTheme()      // 色と PC-9800 フォント（ルーラーの見た目も変わる）
@@ -738,11 +758,12 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         return write(to: url, encoding: encoding, lineEnding: lineEnding)
     }
 
+    /// directory: 保存ダイアログを開く場所（nil = 今のファイルのあるところ）
     @discardableResult
-    func saveAs() -> Bool {
+    func saveAs(in directory: URL? = nil) -> Bool {
         let suggested = fileURL?.lastPathComponent ?? "無題.txt"
         guard let choice = FilePanels.runSave(suggestedName: suggested,
-                                              directory: fileURL?.deletingLastPathComponent(),
+                                              directory: directory ?? fileURL?.deletingLastPathComponent(),
                                               encoding: encoding,
                                               lineEnding: lineEnding) else { return false }
         return write(to: choice.url, encoding: choice.encoding, lineEnding: choice.lineEnding)
@@ -798,9 +819,26 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     // MARK: - メニューの処理（ファイル）
 
+    /// ［ファイル］→［iCloud Drive から開く…］: 開くダイアログを iCloud Drive で開く
+    @objc func fileOpenFromICloud(_ sender: Any?) {
+        openWithPanel(directory: FilePanels.iCloudDrive)
+    }
+
+    /// ［ファイル］→［iCloud Drive に保存…］: 保存ダイアログを iCloud Drive で開く（iPad の「ファイル」からも開ける）
+    @objc func fileSaveToICloud(_ sender: Any?) {
+        saveAs(in: FilePanels.iCloudDrive)
+    }
+
     @objc func fileOpen(_ sender: Any?) {
+        openWithPanel(directory: nil)
+    }
+
+    private func openWithPanel(directory: URL?) {
         guard confirmDiscardIfNeeded() else { return }
-        guard let choice = FilePanels.runOpen() else { return }
+        guard let choice = FilePanels.runOpen(directory: directory) else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
         if let other = AppDelegate.shared.controller(showing: choice.url), other !== self {
             other.window.makeKeyAndOrderFront(nil)
             return
