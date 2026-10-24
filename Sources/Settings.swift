@@ -51,6 +51,9 @@ final class Settings {
         static let hideMacMenuBar = "HideMacMenuBar"
         static let lineSpacing = "LineSpacingPercent"
         static let seditMode = "SeditMode"
+        static let showLineNumbers = "ShowLineNumbers"
+        static let showColumnRuler = "ShowColumnRuler"
+        static let showCharacterCount = "ShowCharacterCount"
     }
 
     private init() {
@@ -67,6 +70,9 @@ final class Settings {
             Key.hideMacMenuBar: true,
             Key.lineSpacing: 100,
             Key.seditMode: false,
+            Key.showLineNumbers: false,
+            Key.showColumnRuler: false,
+            Key.showCharacterCount: false,
         ])
     }
 
@@ -112,6 +118,24 @@ final class Settings {
     /// 本文に使うフォント。等幅フォントモードのときはフォントパネルで選んだのより優先
     var editorFont: NSFont {
         return monospaceMode || seditMode ? Settings.monospaceFont : font
+    }
+
+    /// ［表示］→［行番号］
+    var showLineNumbers: Bool {
+        get { return defaults.bool(forKey: Key.showLineNumbers) }
+        set { defaults.set(newValue, forKey: Key.showLineNumbers) }
+    }
+
+    /// ［表示］→［桁ルーラー］
+    var showColumnRuler: Bool {
+        get { return defaults.bool(forKey: Key.showColumnRuler) }
+        set { defaults.set(newValue, forKey: Key.showColumnRuler) }
+    }
+
+    /// ［表示］→［文字数］
+    var showCharacterCount: Bool {
+        get { return defaults.bool(forKey: Key.showCharacterCount) }
+        set { defaults.set(newValue, forKey: Key.showCharacterCount) }
     }
 
     /// ［表示］→［SEDIT 風］

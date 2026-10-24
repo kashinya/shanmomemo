@@ -75,27 +75,49 @@ final class StatusBarView: NSView {
     static let height: CGFloat = 22
 
     private let positionLabel = StatusBarView.makeLabel()
+    private let characterLabel = StatusBarView.makeLabel()
     private let zoomLabel = StatusBarView.makeLabel()
     private let lineEndingLabel = StatusBarView.makeLabel()
     private let encodingLabel = StatusBarView.makeLabel()
 
     private static let labelFont = NSFont.systemFont(ofSize: 11)
 
-    /// 左から 位置 / ズーム / 改行 / 文字コード の欄幅（右寄せで並べる）。
-    /// それぞれ出しうるいちばん長い表示に合わせて詰めてあるので、本文 500pt 幅のウィンドウでも左はじにロゴが入る
-    private let columnWidths: [CGFloat] = {
+    /// 欄の幅は、それぞれ出しうるいちばん長い表示に合わせて詰めてある（文字数を出さなければ、本文 500pt 幅でも左はじにロゴが入る）
+    private static func columnWidth(_ samples: [String]) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: StatusBarView.labelFont]
-        func width(_ samples: [String]) -> CGFloat {
-            let widest = samples.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0
-            return ceil(widest) + 20   // 区切り線からの余白 10 + 右の余白 4 + ラベル内側の余白 6
+        let widest = samples.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0
+        return ceil(widest) + 20   // 区切り線からの余白 10 + 右の余白 4 + ラベル内側の余白 6
+    }
+    private static let positionWidth = columnWidth(["行 99999、列 9999"])
+    private static let characterWidth = columnWidth(["99,999 / 9,999,999 文字"])
+    private static let zoomWidth = columnWidth(["500%"])
+    private static let lineEndingWidth = columnWidth(LineEnding.allCases.map { $0.displayName })
+    private static let encodingWidth = columnWidth(TextEncoding.allCases.map { $0.displayName })
+
+    /// ［表示］→［文字数］: 位置のとなりに文字数の欄を出す（Windows 11 のメモ帳と同じ並び）
+    var showsCharacterCount = false {
+        didSet {
+            if oldValue != showsCharacterCount {
+                layoutColumns()
+            }
         }
-        return [
-            width(["行 99999、列 9999"]),
-            width(["500%"]),
-            width(LineEnding.allCases.map { $0.displayName }),
-            width(TextEncoding.allCases.map { $0.displayName }),
-        ]
-    }()
+    }
+
+    /// 左から 位置 /（文字数）/ ズーム / 改行 / 文字コード。右寄せで並べる
+    private var columns: [(label: NSTextField, width: CGFloat)] {
+        var columns: [(label: NSTextField, width: CGFloat)] = [(positionLabel, StatusBarView.positionWidth)]
+        if showsCharacterCount {
+            columns.append((characterLabel, StatusBarView.characterWidth))
+        }
+        columns.append((zoomLabel, StatusBarView.zoomWidth))
+        columns.append((lineEndingLabel, StatusBarView.lineEndingWidth))
+        columns.append((encodingLabel, StatusBarView.encodingWidth))
+        return columns
+    }
+
+    private var allLabels: [NSTextField] {
+        return [positionLabel, characterLabel, zoomLabel, lineEndingLabel, encodingLabel]
+    }
 
     /// 左はじの SHANMO ロゴ（Resources/StatusLogo.png）
     private let logoView: NSImageView? = {
@@ -104,36 +126,36 @@ final class StatusBarView: NSView {
         let view = NSImageView(image: image)
         view.imageScaling = .scaleProportionallyUpOrDown
         view.frame = NSRect(x: 8, y: 3, width: (height * image.size.width / image.size.height).rounded(), height: height)
-        view.autoresizingMask = [.maxXMargin]
         return view
     }()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        let labels = [positionLabel, zoomLabel, lineEndingLabel, encodingLabel]
-        var x = frameRect.width
-        for index in stride(from: labels.count - 1, through: 0, by: -1) {
-            x -= columnWidths[index]
-            let label = labels[index]
-            label.frame = NSRect(x: x + 10, y: 3, width: columnWidths[index] - 14, height: 16)
-            label.autoresizingMask = [.minXMargin]
+        for label in allLabels {
             addSubview(label)
         }
         if let logoView = logoView {
             addSubview(logoView)
-            updateLogoVisibility()
         }
-    }
-
-    /// ウィンドウが狭くて欄とぶつかるときはロゴを隠す
-    private func updateLogoVisibility() {
-        guard let logoView = logoView else { return }
-        let columnsLeft = bounds.width - columnWidths.reduce(0, +)
-        logoView.isHidden = logoView.frame.maxX + 8 > columnsLeft
+        layoutColumns()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not used")
+    }
+
+    private func layoutColumns() {
+        characterLabel.isHidden = !showsCharacterCount
+        var x = bounds.width
+        for column in columns.reversed() {
+            x -= column.width
+            column.label.frame = NSRect(x: x + 10, y: 3, width: column.width - 14, height: 16)
+        }
+        // ウィンドウが狭くて欄とぶつかるときはロゴを隠す
+        if let logoView = logoView {
+            logoView.isHidden = logoView.frame.maxX + 8 > x
+        }
+        needsDisplay = true
     }
 
     override var isOpaque: Bool { return true }
@@ -144,7 +166,7 @@ final class StatusBarView: NSView {
     /// Windows 2000 風: ボタン色の地に、へこんだ欄を並べる
     var classic = false {
         didSet {
-            for label in [positionLabel, zoomLabel, lineEndingLabel, encodingLabel] {
+            for label in allLabels {
                 label.textColor = classic ? .black : .secondaryLabelColor
             }
             needsDisplay = true
@@ -153,16 +175,16 @@ final class StatusBarView: NSView {
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        updateLogoVisibility()
-        needsDisplay = true
+        layoutColumns()
     }
 
     override func draw(_ dirtyRect: NSRect) {
+        let widths = columns.map { $0.width }
         if classic {
             Classic.face.setFill()
             bounds.fill()
             var x = bounds.width
-            for width in columnWidths.reversed() {
+            for width in widths.reversed() {
                 x -= width
                 Classic.drawEdge(NSRect(x: x + 2, y: 2, width: width - 2, height: bounds.height - 2), Classic.thinSunken)
             }
@@ -174,14 +196,16 @@ final class StatusBarView: NSView {
         NSColor.separatorColor.setFill()
         NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
         var x = bounds.width
-        for width in columnWidths.reversed() {
+        for width in widths.reversed() {
             x -= width
             NSRect(x: x, y: 5, width: 1, height: bounds.height - 9).fill()
         }
     }
 
-    func update(line: Int, column: Int, zoom: Int, lineEnding: LineEnding, encoding: TextEncoding) {
+    /// characters: 文字数の欄に出す文字（「1,234 文字」「12 / 1,234 文字」）
+    func update(line: Int, column: Int, characters: String, zoom: Int, lineEnding: LineEnding, encoding: TextEncoding) {
         positionLabel.stringValue = "行 \(line)、列 \(column)"
+        characterLabel.stringValue = characters
         zoomLabel.stringValue = "\(zoom)%"
         lineEndingLabel.stringValue = lineEnding.displayName
         encodingLabel.stringValue = encoding.displayName

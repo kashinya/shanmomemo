@@ -387,7 +387,7 @@ final class ClassicMenuBar: NSView {
         let rect: NSRect
     }
 
-    private static let accessKeys = ["ファイル": "F", "編集": "E", "書式": "O", "表示": "V", "ヘルプ": "H"]
+    private static let accessKeys = ["ファイル": "F", "編集": "E", "書式": "O", "表示": "V", "マクロ": "M", "ヘルプ": "H"]
 
     private var items: [Item] = []
     private var hotIndex: Int?

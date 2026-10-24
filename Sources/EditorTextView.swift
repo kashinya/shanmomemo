@@ -10,6 +10,34 @@ final class EditorTextView: NSTextView {
         didSet { needsDisplay = true }
     }
 
+    // MARK: - キーボードマクロの記録
+
+    /// キーを押して入った文字とコマンドだけ覚える（メニューやプログラムから入れた文字は覚えない）
+    private var isHandlingKeyDown = false
+
+    override func keyDown(with event: NSEvent) {
+        isHandlingKeyDown = true
+        defer { isHandlingKeyDown = false }
+        super.keyDown(with: event)
+    }
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        if isHandlingKeyDown {
+            let text = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
+            if !text.isEmpty {
+                MacroRecorder.shared.record(.insert(text))
+            }
+        }
+        super.insertText(string, replacementRange: replacementRange)
+    }
+
+    override func doCommand(by selector: Selector) {
+        if isHandlingKeyDown {
+            MacroRecorder.shared.record(.command(NSStringFromSelector(selector)))
+        }
+        super.doCommand(by: selector)
+    }
+
     // MARK: - SEDIT 風の印
 
     override func draw(_ dirtyRect: NSRect) {

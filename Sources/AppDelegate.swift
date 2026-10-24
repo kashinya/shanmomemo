@@ -5,7 +5,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     static private(set) var shared: AppDelegate!
 
     private(set) var controllers: [EditorWindowController] = []
-    private var functionKeyMonitor: Any?
+    private var keyMonitor: Any?
 
     override init() {
         super.init()
@@ -18,25 +18,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSWindow.allowsAutomaticWindowTabbing = false   // 「タブで開く」系をアプリごと封印
         EmbeddedFonts.register()                        // メニューを作る前に（等幅フォントの名前が変わる）
         NSApp.appearance = Settings.shared.theme.appearance
-        installFunctionKeyMonitor()
+        installKeyMonitor()
+        MacroRecorder.shared.onStateChange = { [weak self] in
+            self?.controllers.forEach { $0.refreshTitle() }
+        }
         NSApp.mainMenu = MainMenu.make()
         // フォントパネルの変更は本文ビューやなくて、ここで受けて全ウィンドウに反映する
         NSFontManager.shared.action = #selector(AppDelegate.fontPanelChangedFont(_:))
     }
 
-    /// SEDIT 風のときは F1〜F10 を SEDIT のファンクションキーにする（メニューの F3・F5 より先に拾う）
-    private func installFunctionKeyMonitor() {
-        functionKeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard Settings.shared.seditMode,
-                  event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
-                  let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first,
-                  (NSF1FunctionKey...NSF10FunctionKey).contains(Int(scalar.value)),
-                  let controller = self?.controllers.first(where: { $0.window === NSApp.keyWindow }),
-                  !controller.textView.hasMarkedText() else {   // 日本語の変換中は F6〜F10 を変換に使うので IM に渡す
+    /// キーを、メニューや本文より先に見る:
+    /// - SEDIT 風のときは F1〜F10 を SEDIT のファンクションキーにする（メニューの F3・F5 より先に拾う）
+    /// - マクロの記録中は、メニューのショートカット（⌘V など）を覚える
+    private func installKeyMonitor() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let controller = self?.controllers.first(where: { $0.window === NSApp.keyWindow }),
+                  !controller.textView.hasMarkedText() else {   // 日本語の変換中は F6〜F10 などを IM に渡す
                 return event
             }
-            controller.performSeditFunction(Int(scalar.value) - NSF1FunctionKey + 1)
-            return nil
+            if Settings.shared.seditMode,
+               event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+               let scalar = event.charactersIgnoringModifiers?.unicodeScalars.first,
+               (NSF1FunctionKey...NSF10FunctionKey).contains(Int(scalar.value)) {
+                controller.performSeditFunction(Int(scalar.value) - NSF1FunctionKey + 1)   // マクロにはここで覚える
+                return nil
+            }
+            MacroRecorder.shared.recordMenuKeyIfNeeded(event)
+            return event
         }
     }
 
@@ -226,6 +234,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         applyFontToAll()
     }
 
+    @objc func toggleLineNumbers(_ sender: Any?) {
+        Settings.shared.showLineNumbers.toggle()
+        controllers.forEach { $0.applyRulers() }
+    }
+
+    @objc func toggleColumnRuler(_ sender: Any?) {
+        Settings.shared.showColumnRuler.toggle()
+        controllers.forEach { $0.applyRulers() }
+    }
+
+    @objc func toggleCharacterCount(_ sender: Any?) {
+        Settings.shared.showCharacterCount.toggle()
+        controllers.forEach { $0.updateStatusNow() }
+    }
+
+    // MARK: - キーボードマクロ
+
+    private var keyEditor: EditorWindowController? {
+        return controllers.first { $0.window === NSApp.keyWindow } ?? controllers.first { $0.window.isMainWindow }
+    }
+
+    @objc func toggleMacroRecording(_ sender: Any?) {
+        let macro = MacroRecorder.shared
+        if macro.isRecording {
+            macro.stopRecording()
+        } else {
+            macro.startRecording()
+        }
+    }
+
+    @objc func playMacro(_ sender: Any?) {
+        guard let editor = keyEditor else { return }
+        MacroRecorder.shared.play(times: 1, in: editor)
+    }
+
+    @objc func playMacroRepeatedly(_ sender: Any?) {
+        guard let editor = keyEditor, let times = MacroRecorder.askRepeatCount() else { return }
+        editor.window.makeKeyAndOrderFront(nil)
+        MacroRecorder.shared.play(times: times, in: editor)
+    }
+
+    @objc func saveMacro(_ sender: Any?) {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = "マクロ.\(MacroRecorder.fileExtension)"
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try MacroRecorder.shared.save(to: url)
+        } catch {
+            showMacroError("マクロを保存できませんでした。", error)
+        }
+    }
+
+    @objc func openMacro(_ sender: Any?) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.message = "マクロのファイル（.\(MacroRecorder.fileExtension)）を選んでください"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try MacroRecorder.shared.load(from: url)
+        } catch {
+            showMacroError("このファイルはマクロとして読めませんでした。", error)
+        }
+    }
+
+    private func showMacroError(_ message: String, _ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = message
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
+    }
+
     @objc func toggleSeditMode(_ sender: Any?) {
         Settings.shared.seditMode.toggle()
         for controller in controllers {
@@ -332,6 +415,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return !Settings.shared.seditMode   // SEDIT 風はいつも黒地に白
         } else if menuItem.action == #selector(setLineSpacing(_:)) {
             menuItem.state = menuItem.tag == Settings.shared.lineSpacingPercent ? .on : .off
+        } else if menuItem.action == #selector(toggleLineNumbers(_:)) {
+            menuItem.state = Settings.shared.showLineNumbers ? .on : .off
+        } else if menuItem.action == #selector(toggleColumnRuler(_:)) {
+            menuItem.state = Settings.shared.showColumnRuler ? .on : .off
+        } else if menuItem.action == #selector(toggleCharacterCount(_:)) {
+            menuItem.state = Settings.shared.showCharacterCount ? .on : .off
+        } else if menuItem.action == #selector(toggleMacroRecording(_:)) {
+            menuItem.title = MacroRecorder.shared.isRecording ? "記録を終える" : "記録を始める"
+            return !MacroRecorder.shared.isPlaying
+        } else if menuItem.action == #selector(playMacro(_:)) || menuItem.action == #selector(playMacroRepeatedly(_:)) {
+            let macro = MacroRecorder.shared
+            return macro.hasMacro && !macro.isRecording && !macro.isPlaying && keyEditor != nil
+        } else if menuItem.action == #selector(saveMacro(_:)) {
+            return MacroRecorder.shared.hasMacro && !MacroRecorder.shared.isRecording
+        } else if menuItem.action == #selector(openMacro(_:)) {
+            return !MacroRecorder.shared.isRecording
         } else if menuItem.action == #selector(toggleSeditMode(_:)) {
             menuItem.state = Settings.shared.seditMode ? .on : .off
         } else if menuItem.action == #selector(toggleClassicUI(_:)) {

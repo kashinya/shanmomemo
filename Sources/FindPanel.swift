@@ -194,6 +194,12 @@ final class FindPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     }
 
     private func showNotFound() {
+        // マクロの実行中は聞かずに止める（くり返しの途中で毎回出てこないように）
+        if MacroRecorder.shared.isPlaying {
+            MacroRecorder.shared.abortRequested = true
+            NSSound.beep()
+            return
+        }
         var shown = searchText
         if shown.count > 40 { shown = String(shown.prefix(40)) + "…" }
         let alert = NSAlert()

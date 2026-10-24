@@ -1,7 +1,7 @@
 import AppKit
 
 /// 1 ウィンドウ = 1 文書。タブなし、自動保存なし、自動復元なし。
-final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation {
+final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation, RulerSource {
 
     static let minZoom = 10
     static let maxZoom = 500
@@ -19,6 +19,20 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private let seditLine = SeditStatusLine()
     private let functionBar = SeditFunctionBar()
     private var totalLinesCache: Int?
+    private var characterCountCache: Int?
+    // ［表示］→［行番号］［桁ルーラー］
+    private lazy var lineRuler: LineNumberRuler = {
+        let ruler = LineNumberRuler(scrollView: scrollView)
+        ruler.source = self
+        ruler.clientView = textView
+        return ruler
+    }()
+    private lazy var columnRuler: ColumnRuler = {
+        let ruler = ColumnRuler(scrollView: scrollView)
+        ruler.source = self
+        ruler.clientView = textView
+        return ruler
+    }()
     // Windows 2000 風のときだけ出す部品
     private let titleBar = ClassicTitleBar()
     private let menuBar = ClassicMenuBar()
@@ -81,6 +95,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         applyWordWrap()
         applyClassicUI()
         applySeditMode()
+        applyRulers()
         applyStatusBarVisibility()
         updateTitle()
     }
@@ -157,6 +172,117 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
                                                selector: #selector(clipViewFrameDidChange(_:)),
                                                name: NSView.frameDidChangeNotification,
                                                object: scrollView.contentView)
+        // スクロールしたら行番号と桁ルーラーも描き直す
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(clipViewBoundsDidChange(_:)),
+                                               name: NSView.boundsDidChangeNotification,
+                                               object: scrollView.contentView)
+        scrollView.verticalRulerView = lineRuler
+        scrollView.horizontalRulerView = columnRuler
+    }
+
+    @objc private func clipViewBoundsDidChange(_ notification: Notification) {
+        refreshRulers()
+    }
+
+    // MARK: - 行番号・桁ルーラー（RulerSource）
+
+    /// ［表示］→［行番号］［桁ルーラー］を出す／隠す
+    func applyRulers() {
+        let settings = Settings.shared
+        scrollView.hasVerticalRuler = settings.showLineNumbers
+        scrollView.hasHorizontalRuler = settings.showColumnRuler
+        scrollView.rulersVisible = settings.showLineNumbers || settings.showColumnRuler
+        refreshRulers()
+    }
+
+    private func refreshRulers() {
+        let settings = Settings.shared
+        if settings.showLineNumbers {
+            lineRuler.updateThickness()
+            lineRuler.needsDisplay = true
+        }
+        if settings.showColumnRuler {
+            columnRuler.updateThickness()
+            columnRuler.needsDisplay = true
+        }
+    }
+
+    var rulerStyle: RulerStyle {
+        if Settings.shared.seditMode { return .sedit }
+        return Settings.shared.classicUI ? .classic : .mac
+    }
+
+    var rulerFont: NSFont {
+        return (textAttributes[.font] as? NSFont) ?? Settings.shared.editorFont
+    }
+
+    var rulerBackground: NSColor {
+        return activeTheme.background.withAlphaComponent(Settings.shared.backgroundOpacity)
+    }
+
+    var rulerText: NSColor {
+        return activeTheme.text
+    }
+
+    var currentLineNumber: Int {
+        return lineNumber(at: caretLocation)
+    }
+
+    var totalLineCount: Int {
+        if let total = totalLinesCache { return total }
+        let total = countNewlines(in: NSRange(location: 0, length: textStorage.length)) + 1
+        totalLinesCache = total
+        return total
+    }
+
+    var caretX: CGFloat? {
+        let length = textStorage.length
+        let origin = textView.textContainerOrigin
+        guard length > 0 else { return origin.x + textContainer.lineFragmentPadding }
+        let location = min(caretLocation, length)
+        if location == length {
+            // いちばん最後: 最後が改行なら次の行の頭、そうでなければ最後の字のうしろ
+            let extra = layoutManager.extraLineFragmentRect
+            if !extra.isEmpty {
+                return origin.x + extra.minX + textContainer.lineFragmentPadding
+            }
+            let last = layoutManager.glyphIndexForCharacter(at: length - 1)
+            return origin.x + layoutManager.boundingRect(forGlyphRange: NSRange(location: last, length: 1), in: textContainer).maxX
+        }
+        let glyph = layoutManager.glyphIndexForCharacter(at: location)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return origin.x + line.minX + layoutManager.location(forGlyphAt: glyph).x
+    }
+
+    // MARK: - 文字数（改行は数えない。絵文字なども見た目どおり 1 文字）
+
+    private var characterCount: Int {
+        if let count = characterCountCache { return count }
+        let count = max(0, textStorage.string.count - (totalLineCount - 1))
+        characterCountCache = count
+        return count
+    }
+
+    private static let numberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
+    private static func formatted(_ value: Int) -> String {
+        return numberFormatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    /// 選んでるときは「選んだ数 / 全体」
+    private func characterCountText(unit: String) -> String {
+        let total = EditorWindowController.formatted(characterCount)
+        let selection = textView.selectedRange()
+        guard selection.length > 0 else { return total + unit }
+        let selected = textStorage.mutableString.substring(with: selection)
+        let count = selected.count - countNewlines(in: selection)
+        return EditorWindowController.formatted(max(0, count)) + " / " + total + unit
     }
 
     private func disableIfAvailable(_ setter: String, key: String, value: Int) {
@@ -193,6 +319,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
         textStorage.endEditing()
         updateSeditWrapWidth()   // ズームで ↓ の幅が変わる
+        refreshRulers()          // 行番号と桁の幅もフォントに合わせる
     }
 
     func applyWordWrap() {
@@ -310,6 +437,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         scrollView.hasVerticalScroller = !classic
         scrollView.hasHorizontalScroller = !classic && !Settings.shared.wordWrap
         statusBar.classic = classic
+        refreshRulers()
         layoutContent()
         updateTitle()
         window.makeFirstResponder(textView)
@@ -336,7 +464,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textContainer.lineFragmentPadding = sedit ? 0 : 2
         totalLinesCache = nil
         updateWindowAppearance()
-        applyTheme()      // 色と PC-9800 フォント
+        applyTheme()      // 色と PC-9800 フォント（ルーラーの見た目も変わる）
         applyWordWrap()   // 余白が変わったので、折り返しの幅と並べ方を合わせ直す
         updateStatusNow()
     }
@@ -448,8 +576,15 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         return fileURL == nil && !isDirty && textStorage.length == 0
     }
 
+    /// マクロの記録を始めた／やめたとき
+    func refreshTitle() {
+        updateTitle()
+        updateStatusNow()
+    }
+
     private func updateTitle() {
-        window.title = (isDirty ? "*" : "") + displayName + " - " + AppInfo.name
+        let recording = MacroRecorder.shared.isRecording ? "  [マクロ記録中]" : ""
+        window.title = (isDirty ? "*" : "") + displayName + " - " + AppInfo.name + recording
         window.representedURL = fileURL
         window.isDocumentEdited = isDirty
         titleBar.refresh()
@@ -527,6 +662,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.undoManager?.removeAllActions()
         lineCache = nil
         totalLinesCache = nil
+        characterCountCache = nil
         updateTextViewMinSize()
     }
 
@@ -778,6 +914,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     // MARK: - SEDIT 風のファンクションキー（F1〜F10 と、下の欄のクリック）
 
     func performSeditFunction(_ number: Int) {
+        MacroRecorder.shared.record(.sedit(number))
         switch number {
         case 1: textView.cut(nil)
         case 2: textView.copy(nil)
@@ -918,6 +1055,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.undoManager?.setActionName("すべて置換")
         lineCache = nil
         totalLinesCache = nil
+        characterCountCache = nil
         return ranges.count
     }
 
@@ -943,7 +1081,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         return count
     }
 
-    private func lineNumber(at location: Int) -> Int {
+    func lineNumber(at location: Int) -> Int {
         let target = max(0, min(location, textStorage.length))
         let line: Int
         if let cache = lineCache {
@@ -1006,17 +1144,22 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func updateStatusNow() {
-        if Settings.shared.seditMode {
-            let total = totalLinesCache ?? (countNewlines(in: NSRange(location: 0, length: textStorage.length)) + 1)
-            totalLinesCache = total
+        refreshRulers()
+        let settings = Settings.shared
+        if settings.seditMode {
             let path = fileURL.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "無題"
-            seditLine.update(path: path, line: lineNumber(at: caretLocation), totalLines: total,
-                             column: columnNumber(at: caretLocation), encoding: encoding, lineEnding: lineEnding)
+            seditLine.update(path: path, line: lineNumber(at: caretLocation), totalLines: totalLineCount,
+                             column: columnNumber(at: caretLocation),
+                             characters: settings.showCharacterCount ? characterCountText(unit: "") : nil,
+                             isRecording: MacroRecorder.shared.isRecording,
+                             encoding: encoding, lineEnding: lineEnding)
             return
         }
-        guard Settings.shared.showStatusBar else { return }
+        guard settings.showStatusBar else { return }
+        statusBar.showsCharacterCount = settings.showCharacterCount
         statusBar.update(line: lineNumber(at: caretLocation),
                          column: columnNumber(at: caretLocation),
+                         characters: settings.showCharacterCount ? characterCountText(unit: " 文字") : "",
                          zoom: zoomPercent,
                          lineEnding: lineEnding,
                          encoding: encoding)
@@ -1033,6 +1176,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func textDidChange(_ notification: Notification) {
         totalLinesCache = nil
+        characterCountCache = nil
         textView.invalidateEndOfText()
         if let undoManager = textView.undoManager, undoManager.isUndoing || undoManager.isRedoing {
             lineCache = nil

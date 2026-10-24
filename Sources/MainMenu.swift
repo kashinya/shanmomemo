@@ -115,6 +115,9 @@ enum MainMenu {
         zoomItem.submenu = zoomMenu
         viewMenu.addItem(zoomItem)
         viewMenu.addItem(item("ステータス バー", #selector(AppDelegate.toggleStatusBar(_:))))
+        viewMenu.addItem(item("文字数", #selector(AppDelegate.toggleCharacterCount(_:))))
+        viewMenu.addItem(item("行番号", #selector(AppDelegate.toggleLineNumbers(_:))))
+        viewMenu.addItem(item("桁ルーラー", #selector(AppDelegate.toggleColumnRuler(_:))))
         let themeItem = NSMenuItem(title: "テーマ", action: nil, keyEquivalent: "")
         let themeMenu = NSMenu(title: "テーマ")
         for (index, theme) in EditorTheme.all.enumerated() {
@@ -133,6 +136,16 @@ enum MainMenu {
         viewMenu.addItem(NSMenuItem.separator())
         viewMenu.addItem(item("SEDIT 風", #selector(AppDelegate.toggleSeditMode(_:))))
         add(viewMenu, to: mainMenu)
+
+        // マクロ（キーボードマクロ）
+        let macroMenu = NSMenu(title: "マクロ")
+        macroMenu.addItem(item("記録を始める", #selector(AppDelegate.toggleMacroRecording(_:)), "r", [.command, .option]))
+        macroMenu.addItem(item("実行", #selector(AppDelegate.playMacro(_:)), "p", [.command, .option]))
+        macroMenu.addItem(item("回数を指定して実行…", #selector(AppDelegate.playMacroRepeatedly(_:)), "p", [.command, .option, .shift]))
+        macroMenu.addItem(NSMenuItem.separator())
+        macroMenu.addItem(item("マクロを開く…", #selector(AppDelegate.openMacro(_:))))
+        macroMenu.addItem(item("マクロを保存…", #selector(AppDelegate.saveMacro(_:))))
+        add(macroMenu, to: mainMenu)
 
         // ウインドウ
         let windowMenu = NSMenu(title: "ウインドウ")

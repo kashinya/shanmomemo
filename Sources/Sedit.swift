@@ -10,6 +10,7 @@ enum Sedit {
     static let cyan = NSColor(srgbRed: 0, green: 1, blue: 1, alpha: 1)
     static let green = NSColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)
     static let yellow = NSColor(srgbRed: 1, green: 1, blue: 0, alpha: 1)
+    static let red = NSColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
 
     static let rowHeight: CGFloat = 16
     static let cellWidth: CGFloat = 8
@@ -70,15 +71,21 @@ final class SeditStatusLine: NSView {
     private var column = 1
     private var encoding = ""
     private var lineEnding = ""
+    private var characters: String?
+    private var isRecording = false
 
     override var isFlipped: Bool { return true }
     override var isOpaque: Bool { return true }
 
-    func update(path: String, line: Int, totalLines: Int, column: Int, encoding: TextEncoding, lineEnding: LineEnding) {
+    /// characters: 文字数（［表示］→［文字数］のとき）。isRecording: マクロの記録中
+    func update(path: String, line: Int, totalLines: Int, column: Int, characters: String?, isRecording: Bool,
+                encoding: TextEncoding, lineEnding: LineEnding) {
         self.path = path
         self.line = line
         self.totalLines = totalLines
         self.column = column
+        self.characters = characters
+        self.isRecording = isRecording
         self.encoding = SeditStatusLine.shortName(encoding)
         self.lineEnding = SeditStatusLine.shortName(lineEnding)
         needsDisplay = true
@@ -113,14 +120,25 @@ final class SeditStatusLine: NSView {
         bounds.fill()
         let height = bounds.height
         // 数字は白地、見出しは水色地（SEDIT と同じ）
-        let segments: [(String, NSColor)] = [
-            ("<挿入>  ", Sedit.cyan),
-            (SeditStatusLine.pad(line, 5), Sedit.white),
-            ("/" + SeditStatusLine.pad(totalLines, 6) + "行 ", Sedit.cyan),
-            (SeditStatusLine.pad(column, 4), Sedit.white),
-            ("桁  ", Sedit.cyan),
-            (" " + encoding + " ", Sedit.white),
-            (" " + lineEnding + " ", Sedit.cyan),
+        var segments: [(String, NSColor, NSColor)] = []   // 文字, 地, 字の色
+        if isRecording {
+            segments.append(("<記録中>", Sedit.red, Sedit.white))
+            segments.append((" ", Sedit.cyan, Sedit.black))
+        }
+        segments += [
+            ("<挿入>  ", Sedit.cyan, Sedit.black),
+            (SeditStatusLine.pad(line, 5), Sedit.white, Sedit.black),
+            ("/" + SeditStatusLine.pad(totalLines, 6) + "行 ", Sedit.cyan, Sedit.black),
+            (SeditStatusLine.pad(column, 4), Sedit.white, Sedit.black),
+            ("桁  ", Sedit.cyan, Sedit.black),
+        ]
+        if let characters = characters {
+            segments.append((" " + characters, Sedit.white, Sedit.black))
+            segments.append(("字  ", Sedit.cyan, Sedit.black))
+        }
+        segments += [
+            (" " + encoding + " ", Sedit.white, Sedit.black),
+            (" " + lineEnding + " ", Sedit.cyan, Sedit.black),
         ]
         let rightWidth = segments.reduce(0) { $0 + Sedit.textWidth($1.0) }
         // 場所が長いときは頭を「…」にして、右の欄を押し出さない
@@ -133,8 +151,8 @@ final class SeditStatusLine: NSView {
         Sedit.drawPixelText {
             let pathEnd = Sedit.drawCell(shownPath, at: 0, height: height, background: Sedit.white)
             var x = max(pathEnd + Sedit.cellWidth * 2, bounds.width - rightWidth)
-            for (text, background) in segments {
-                x = Sedit.drawCell(text, at: x, height: height, background: background)
+            for (text, background, foreground) in segments {
+                x = Sedit.drawCell(text, at: x, height: height, background: background, foreground: foreground)
             }
         }
     }
