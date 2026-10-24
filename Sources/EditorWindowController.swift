@@ -79,7 +79,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
                                      defer: false)
 
         let barHeight = StatusBarView.height
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: barHeight,
+        let scroll = EditorScrollView(frame: NSRect(x: 0, y: barHeight,
                                                 width: contentRect.width,
                                                 height: contentRect.height - barHeight))
         let editorView = EditorTextView(frame: NSRect(origin: .zero, size: scroll.contentSize),
@@ -191,7 +191,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     @objc private func clipViewBoundsDidChange(_ notification: Notification) {
         refreshRulers()
-        textView.updateInsertionPointForRulers()
     }
 
     // MARK: - 行番号・桁ルーラー（RulerSource）
@@ -223,8 +222,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         scrollView.hasHorizontalRuler = settings.showColumnRuler
         scrollView.rulersVisible = settings.showLineNumbers || settings.showColumnRuler
         refreshRulers()
-        textView.needsDisplay = true   // ルーラーの下に字を描かんところが変わる（SEDIT 風）
-        textView.updateInsertionPointForRulers()
     }
 
     private func refreshRulers() {
@@ -532,7 +529,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             }
         }
         textView.showsSeditMarks = sedit
-        textView.avoidsRulers = sedit   // SEDIT 風のルーラーは透かして背景を見せる
         totalLinesCache = nil
         updateWindowAppearance()
         applyTheme()      // 色と PC-9800 フォント（ルーラーの見た目も変わる）

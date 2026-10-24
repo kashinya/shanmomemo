@@ -26,7 +26,7 @@ enum LaunchProbe {
             let clip = scrollView.contentView
             var lines = [
                 "scrollView.frame \(scrollView.frame) wantsLayer \(scrollView.wantsLayer) layer \(scrollView.layer != nil)",
-                "clip.frame \(clip.frame) bounds \(clip.bounds) copiesOnScroll \(clip.copiesOnScroll)",
+                "clip.frame \(clip.frame) bounds \(clip.bounds)",
                 "automaticallyAdjustsContentInsets \(scrollView.automaticallyAdjustsContentInsets) contentInsets \(clip.contentInsets)",
                 "documentVisibleRect \(scrollView.documentVisibleRect) document.frame \(scrollView.documentView?.frame ?? .zero)",
             ]

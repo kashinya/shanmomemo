@@ -72,7 +72,7 @@ final class LineNumberRuler: NSRulerView {
         let style = source.rulerStyle
         switch style {
         case .mac:
-            // 透けさせない（今の NSScrollView はルーラーを本文の上に重ねるので、透けるとスクロールした字が見える）
+            // 透けさせない（本文が半透明でも、ルーラーは本文の地の色で塗る）
             source.rulerBackground.setFill()
             bounds.fill()
             source.rulerText.withAlphaComponent(0.05).setFill()
@@ -87,7 +87,7 @@ final class LineNumberRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: bounds.maxX - 1, y: dirtyRect.minY, width: 1, height: dirtyRect.height).fill()
         case .sedit:
-            // 塗らずに、後ろの背景（黒・半透明・背景画像）を見せる。本文の字はルーラーの下には描かん（EditorTextView.avoidsRulers）
+            // 塗らずに、後ろの背景（黒・半透明・背景画像）を見せる。本文の字はルーラーの下には入らん（EditorScrollView）
             break
         }
 
@@ -180,7 +180,7 @@ final class ColumnRuler: NSRulerView {
         let style = source.rulerStyle
         switch style {
         case .mac:
-            // 透けさせない（今の NSScrollView はルーラーを本文の上に重ねるので、透けるとスクロールした字が見える）
+            // 透けさせない（本文が半透明でも、ルーラーは本文の地の色で塗る）
             source.rulerBackground.setFill()
             bounds.fill()
             source.rulerText.withAlphaComponent(0.05).setFill()
@@ -195,7 +195,7 @@ final class ColumnRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: dirtyRect.minX, y: bounds.maxY - 1, width: dirtyRect.width, height: 1).fill()
         case .sedit:
-            // 塗らずに、後ろの背景（黒・半透明・背景画像）を見せる。本文の字はルーラーの下には描かん（EditorTextView.avoidsRulers）
+            // 塗らずに、後ろの背景（黒・半透明・背景画像）を見せる。本文の字はルーラーの下には入らん（EditorScrollView）
             break
         }
 
@@ -270,5 +270,44 @@ final class ColumnRuler: NSRulerView {
                 draw()
             }
         }
+    }
+}
+
+/// 本文のスクロール。今の NSScrollView は行番号と桁ルーラーを本文の上に重ねる（クリップビューをルーラーの下まで広げて、
+/// contentInsets で本文をずらすだけ。CI で測った）ので、スクロールした字がルーラーの下に入る。
+/// クリップビューをルーラーの外に置き直して、字がルーラーの下に入らんようにする（SEDIT 風はルーラーを透かして背景を見せる）
+final class EditorScrollView: NSScrollView {
+    private var isRetiling = false
+
+    override func tile() {
+        super.tile()
+        guard !isRetiling else { return }
+        isRetiling = true
+        defer { isRetiling = false }
+        var frame = contentView.frame
+        if rulersVisible, hasVerticalRuler, let ruler = verticalRulerView, !ruler.isHidden, ruler.frame.maxX > frame.minX {
+            frame.size.width = max(0, frame.maxX - ruler.frame.maxX)
+            frame.origin.x = ruler.frame.maxX
+        }
+        if rulersVisible, hasHorizontalRuler, let ruler = horizontalRulerView, !ruler.isHidden, ruler.frame.maxY > frame.minY {
+            frame.size.height = max(0, frame.maxY - ruler.frame.maxY)   // この View は上が y = 0
+            frame.origin.y = ruler.frame.maxY
+        }
+        let insets = contentView.contentInsets
+        let hasInsets = insets.top != 0 || insets.left != 0 || insets.bottom != 0 || insets.right != 0
+        guard frame != contentView.frame || hasInsets else { return }
+        if hasInsets {
+            // ルーラーのぶんは、ずらすんやなくてクリップビューを小さくして空ける
+            automaticallyAdjustsContentInsets = false
+            contentInsets = NSEdgeInsets()
+            contentView.contentInsets = NSEdgeInsets()
+        }
+        contentView.frame = frame
+        // スクロールの位置を、余白なしで動ける範囲に収め直す
+        let constrained = contentView.constrainBoundsRect(contentView.bounds)
+        if constrained.origin != contentView.bounds.origin {
+            contentView.scroll(to: constrained.origin)
+        }
+        reflectScrolledClipView(contentView)
     }
 }

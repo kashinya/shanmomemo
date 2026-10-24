@@ -10,16 +10,6 @@ final class EditorTextView: NSTextView {
         didSet { needsDisplay = true }
     }
 
-    /// ルーラー（行番号・桁）の下には字もカーソルも描かん。今の NSScrollView はルーラーを本文の上に重ねるので、
-    /// ルーラーを透かして背景を見せる SEDIT 風では、こうせんとスクロールした字がルーラーの下に見える
-    var avoidsRulers = false {
-        didSet {
-            guard avoidsRulers != oldValue else { return }
-            needsDisplay = true
-            updateInsertionPointForRulers()
-        }
-    }
-
     // MARK: - キーボードマクロの記録
 
     /// キーを押して入った文字とコマンドだけ覚える（メニューやプログラムから入れた文字は覚えない）
@@ -85,61 +75,9 @@ final class EditorTextView: NSTextView {
     // MARK: - SEDIT 風の印
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let free = rulerFreeRect else {
-            drawContent(dirtyRect)
-            return
-        }
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(rect: free).addClip()
-        drawContent(dirtyRect)
-        NSGraphicsContext.restoreGraphicsState()
-    }
-
-    private func drawContent(_ dirtyRect: NSRect) {
         // 印は字とカーソルより先（下）に描く（[EOF] の水色でカーソルを隠さんように）。背景は後ろの View が描いてる
         drawSeditMarks(in: dirtyRect)
         super.draw(dirtyRect)
-    }
-
-    /// avoidsRulers のとき、ルーラーに重なってない（字を描いてええ）ところ。この View の座標
-    private var rulerFreeRect: NSRect? {
-        guard avoidsRulers, let scrollView = enclosingScrollView, scrollView.rulersVisible else { return nil }
-        var minX = bounds.minX
-        var minY = bounds.minY
-        if scrollView.hasVerticalRuler, let ruler = scrollView.verticalRulerView, !ruler.isHidden {
-            minX = max(minX, convert(ruler.bounds, from: ruler).maxX)
-        }
-        if scrollView.hasHorizontalRuler, let ruler = scrollView.horizontalRulerView, !ruler.isHidden {
-            minY = max(minY, convert(ruler.bounds, from: ruler).maxY)   // この View は上が y = 0
-        }
-        return NSRect(x: minX, y: minY, width: max(0, bounds.maxX - minX), height: max(0, bounds.maxY - minY))
-    }
-
-    /// カーソルがルーラーの下に入ったら隠す（スクロールしたとき・カーソルが動いたとき・ルーラーを出し入れしたときに呼ぶ）。
-    /// macOS 14 からカーソルは別の View（NSTextInsertionIndicator）なので、draw の切り抜きが効かん
-    func updateInsertionPointForRulers() {
-        if #available(macOS 14.0, *) {
-            let free = rulerFreeRect
-            for case let indicator as NSTextInsertionIndicator in subviews {
-                indicator.isHidden = free.map { !$0.contains(indicator.frame) } ?? false
-            }
-        }
-    }
-
-    // macOS 13 まではカーソルもここで描く
-    override func drawInsertionPoint(in rect: NSRect, color: NSColor, turnedOn flag: Bool) {
-        if flag, let free = rulerFreeRect, !free.contains(rect) {
-            super.drawInsertionPoint(in: rect, color: color, turnedOn: false)
-            return
-        }
-        super.drawInsertionPoint(in: rect, color: color, turnedOn: flag)
-    }
-
-    override func setSelectedRanges(_ ranges: [NSValue], affinity: NSSelectionAffinity, stillSelecting: Bool) {
-        super.setSelectedRanges(ranges, affinity: affinity, stillSelecting: stillSelecting)
-        if avoidsRulers {
-            DispatchQueue.main.async { [weak self] in self?.updateInsertionPointForRulers() }   // カーソルの View が動いたあとで
-        }
     }
 
     /// SEDIT 風で折り返さないとき、いちばん長い行の ↓ と [EOF] がはみ出さんよう、右に [EOF] の幅だけ足す
