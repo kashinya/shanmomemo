@@ -51,7 +51,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        LaunchProbe.mark("didFinishLaunching")
         applyPresentationOptions()
         // 念のため。起動時に何も開かれへんかったら「無題」を 1 枚出す
         DispatchQueue.main.async {

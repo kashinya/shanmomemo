@@ -72,7 +72,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
                                      styleMask: [.titled, .closable, .miniaturizable, .resizable],
                                      backing: .buffered,
                                      defer: false)
-        LaunchProbe.mark("nsWindow")
 
         let barHeight = StatusBarView.height
         let scroll = NSScrollView(frame: NSRect(x: 0, y: barHeight,
@@ -94,19 +93,12 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
         setUpWindow()
         setUpTextView()
-        LaunchProbe.mark("textView")
         applyTheme()
-        LaunchProbe.mark("theme")
         applyWordWrap()
-        LaunchProbe.mark("wordWrap")
         applyClassicUI()
-        LaunchProbe.mark("classicUI")
         applySeditMode()
-        LaunchProbe.mark("seditMode")
         applyRulers()
-        LaunchProbe.mark("rulers")
         applyStatusBarVisibility()
-        LaunchProbe.mark("statusBar")
         updateTitle()
     }
 
@@ -361,12 +353,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func applyFont() {
         let base = Settings.shared.editorFont
-        LaunchProbe.mark("editorFont")
         let size = max(2, base.pointSize * CGFloat(zoomPercent) / 100)
         let font = NSFont(descriptor: base.fontDescriptor, size: size) ?? base
-        LaunchProbe.mark("zoomedFont")
         lineHeightDelegate.update(for: font, layoutManager: layoutManager, spacing: Settings.shared.lineSpacing)
-        LaunchProbe.mark("lineHeight")
         scrollView.verticalLineScroll = max(1, lineHeightDelegate.lineHeight)   // スクロールバーの矢印で 1 行ずつ
         layoutManager.pixelFontDotSize = font.fontName == Settings.pc98FontName ? font.pointSize / 16 : nil
         textView.needsDisplay = true
@@ -379,7 +368,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.beginEditing()
         textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
         textStorage.endEditing()
-        LaunchProbe.mark("attributes")
         updateTextInsets()       // SEDIT 風の左の余白は半角 4 桁ぶん（ズームで変わる）
         updateSeditWrapWidth()   // ズームで ↓ の幅が変わる
         refreshRulers()          // 行番号と桁の幅もフォントに合わせる
@@ -547,7 +535,6 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.selectedTextAttributes = selection
         backgroundView.color = theme.background
         applyBackground()
-        LaunchProbe.mark("background")
         applyFont()   // 文字の色
     }
 
