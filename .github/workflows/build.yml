@@ -73,6 +73,12 @@ jobs:
           done
           xcrun swiftc -O -o "$RUNNER_TEMP/launch-time" tools/launch-time.swift
           "$RUNNER_TEMP/launch-time" "$APP" 6
+          # SEDIT 風 + 行番号 + 桁ルーラーのときの、ルーラーと本文の並び方
+          defaults write local.memocho SeditMode -bool YES
+          defaults write local.memocho ShowLineNumbers -bool YES
+          defaults write local.memocho ShowColumnRuler -bool YES
+          MEMOCHO_PROBE_GEOMETRY=1 "$RUNNER_TEMP/launch-time" "$APP" 1 || true
+          defaults delete local.memocho || true
 
       # 大きさ優先の最適化（-Osize）にしたらどれだけ小さくなるか（参考、アップロードせん）
       - name: Size with -Osize (reference)

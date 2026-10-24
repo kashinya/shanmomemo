@@ -27,7 +27,11 @@ for run in 1...runs {
     FileManager.default.createFile(atPath: logURL.path, contents: nil)
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = ["-W", "-n", "-F", "--env", "MEMOCHO_LAUNCH_PROBE=1", "--stderr", logURL.path, app.path]
+    var arguments = ["-W", "-n", "-F", "--env", "MEMOCHO_LAUNCH_PROBE=1"]
+    if ProcessInfo.processInfo.environment["MEMOCHO_PROBE_GEOMETRY"] != nil {
+        arguments += ["--env", "MEMOCHO_PROBE_GEOMETRY=1"]   // ルーラーと本文の並び方も出させる
+    }
+    process.arguments = arguments + ["--stderr", logURL.path, app.path]
     do {
         try process.run()
     } catch {
@@ -50,11 +54,14 @@ for run in 1...runs {
     let output = (try? String(contentsOf: logURL, encoding: .utf8)) ?? ""
     // 「launch-probe 区切り: ミリ秒」の行を拾う。window まで来てたら測れた
     let marks = output.split(separator: "\n").compactMap { line -> (String, Double)? in
-        guard line.hasPrefix("launch-probe "), let colon = line.firstIndex(of: ":"),
+        guard line.hasPrefix("launch-probe "), !line.hasPrefix("launch-probe geometry"), let colon = line.firstIndex(of: ":"),
               let value = Double(line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)) else { return nil }
         return (String(line[line.index(line.startIndex, offsetBy: "launch-probe ".count)..<colon]), value)
     }
     let detail = marks.map { String(format: "%@ %.0f", $0.0, $0.1) }.joined(separator: " → ")
+    for line in output.split(separator: "\n") where line.hasPrefix("launch-probe geometry: ") {
+        print(line)
+    }
     if let window = marks.first(where: { $0.0 == "window" }) {
         times.append(window.1)
         print(String(format: "%ld 回目: %.0f ms（%@）", run, window.1, detail))

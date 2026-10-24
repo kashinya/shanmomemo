@@ -14,7 +14,33 @@ enum LaunchProbe {
         guard isEnabled else { return }
         window.displayIfNeeded()
         mark("window")
+        if ProcessInfo.processInfo.environment["MEMOCHO_PROBE_GEOMETRY"] != nil, let content = window.contentView {
+            dumpScrollGeometry(in: content)
+        }
         exit(0)
+    }
+
+    /// ルーラーと本文の並び方を出す（CI で、ルーラーが本文に重なるかを調べる）
+    private static func dumpScrollGeometry(in view: NSView) {
+        if let scrollView = view as? NSScrollView {
+            let clip = scrollView.contentView
+            var lines = [
+                "scrollView.frame \(scrollView.frame) wantsLayer \(scrollView.wantsLayer) layer \(scrollView.layer != nil)",
+                "clip.frame \(clip.frame) bounds \(clip.bounds) copiesOnScroll \(clip.copiesOnScroll)",
+                "automaticallyAdjustsContentInsets \(scrollView.automaticallyAdjustsContentInsets) contentInsets \(clip.contentInsets)",
+                "documentVisibleRect \(scrollView.documentVisibleRect) document.frame \(scrollView.documentView?.frame ?? .zero)",
+            ]
+            for ruler in [scrollView.verticalRulerView, scrollView.horizontalRulerView].compactMap({ $0 }) {
+                lines.append("ruler \(ruler.orientation == .verticalRuler ? "vertical" : "horizontal") frame \(ruler.frame) superview \(ruler.superview.map { String(describing: type(of: $0)) } ?? "nil") hidden \(ruler.isHidden) thickness \(ruler.ruleThickness)")
+            }
+            for line in lines {
+                FileHandle.standardError.write("launch-probe geometry: \(line)\n".data(using: .utf8)!)
+            }
+            return
+        }
+        for subview in view.subviews {
+            dumpScrollGeometry(in: subview)
+        }
     }
 
     private static func elapsedMilliseconds() -> Double {
