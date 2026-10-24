@@ -87,8 +87,8 @@ final class LineNumberRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: bounds.maxX - 1, y: dirtyRect.minY, width: 1, height: dirtyRect.height).fill()
         case .sedit:
-            Sedit.black.setFill()   // 透けさせない
-            bounds.fill()
+            // 塗らずに、後ろの背景（黒・半透明・背景画像）を見せる。本文の字はルーラーの下には描かん（EditorTextView.avoidsRulers）
+            break
         }
 
         guard let textView = clientView as? NSTextView, let layoutManager = textView.layoutManager,
@@ -195,8 +195,8 @@ final class ColumnRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: dirtyRect.minX, y: bounds.maxY - 1, width: dirtyRect.width, height: 1).fill()
         case .sedit:
-            Sedit.black.setFill()   // 透けさせない
-            bounds.fill()
+            // 塗らずに、後ろの背景（黒・半透明・背景画像）を見せる。本文の字はルーラーの下には描かん（EditorTextView.avoidsRulers）
+            break
         }
 
         guard let textView = clientView as? NSTextView, let container = textView.textContainer else { return }
