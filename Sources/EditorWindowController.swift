@@ -196,8 +196,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let settings = Settings.shared
         let inset: NSSize
         if settings.seditMode {
-            let cell = (((textAttributes[.font] as? NSFont)?.pointSize ?? 16) / 2).rounded()
-            inset = NSSize(width: settings.showLineNumbers ? 0 : cell * 4, height: 0)
+            inset = NSSize(width: settings.showLineNumbers ? 0 : Sedit.editorMargin, height: 0)
         } else {
             inset = NSSize(width: 4, height: 4)
         }
@@ -571,12 +570,19 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             functionBar.frame = NSRect(x: area.minX, y: max(area.minY, area.maxY - row), width: area.width, height: row)
             return NSRect(x: area.minX, y: area.minY + row, width: area.width, height: max(0, area.height - row * 2))
         }
+        /// 本文の欄から、スクロールする部分を取る。SEDIT 風はファンクションキーの欄の上にすき間をあける
+        /// （本文の背景はすき間にも敷くので、テーマの色・半透明・背景画像はそのままつながる）
+        func scrollFrame(in text: NSRect) -> NSRect {
+            guard sedit else { return text }
+            return NSRect(x: text.minX, y: text.minY, width: text.width, height: max(0, text.height - Sedit.editorMargin))
+        }
 
         guard Settings.shared.classicUI else {
             rootView.clientRect = .zero
             statusBar.frame = NSRect(x: 0, y: bounds.height - StatusBarView.height, width: bounds.width, height: StatusBarView.height)
-            scrollView.frame = carveSeditRows(NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - statusHeight)))
-            backgroundView.frame = scrollView.frame
+            let text = carveSeditRows(NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - statusHeight)))
+            scrollView.frame = scrollFrame(in: text)
+            backgroundView.frame = text
             return
         }
 
@@ -595,7 +601,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let showHorizontal = !Settings.shared.wordWrap
         let text = NSRect(x: inner.minX, y: inner.minY, width: max(0, inner.width - barSize),
                           height: max(0, inner.height - (showHorizontal ? barSize : 0)))
-        scrollView.frame = text
+        scrollView.frame = scrollFrame(in: text)
         backgroundView.frame = text
         rootView.textRect = text
         verticalBar.frame = NSRect(x: text.maxX, y: text.minY, width: barSize, height: text.height)
