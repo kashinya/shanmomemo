@@ -64,6 +64,12 @@ final class EditorWindow: NSWindow {
     var isClassic: Bool { return !styleMask.contains(.titled) }
     var isClassicMaximized: Bool { return restoreFrame != nil }
 
+    /// 最大化したまま別のファイルを開いたとき: 元に戻すときの位置と大きさを、そのファイルのに替える
+    func setClassicRestoreFrame(_ frame: NSRect) {
+        guard restoreFrame != nil else { return }
+        restoreFrame = frame
+    }
+
     // 枠なしのウィンドウは、これが無いと文字を打てない
     override var canBecomeKey: Bool { return true }
     override var canBecomeMain: Bool { return true }

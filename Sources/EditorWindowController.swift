@@ -54,6 +54,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private var recoveredRevision: Int?
     /// 閉じたあと（AppDelegate が外すまでの間に、控えや位置を書き直さんように）
     private var isClosed = false
+    /// 全画面のときに開いたファイルの位置と大きさ（全画面を抜けたらそこにする）
+    private var pendingRememberedFrame: NSRect?
     /// 中身・文字コード・改行コードが変わるたびに増える
     private var revision = 0
     private var textAttributes: [NSAttributedString.Key: Any] = [:]
@@ -847,7 +849,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     /// このファイルを前に開いた・保存したときの位置と大きさにする。つながってない画面の位置やったら、大きさだけ使う
     private func applyRememberedFrame(for url: URL) {
-        guard var frame = WindowFrames.frame(for: url), !window.styleMask.contains(.fullScreen), !window.isClassicMaximized else {
+        pendingRememberedFrame = nil
+        guard var frame = WindowFrames.frame(for: url) else {
             rememberFrame()
             return
         }
@@ -858,6 +861,15 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             screen = window.screen ?? NSScreen.main
         }
         frame = window.constrainFrameRect(frame, to: screen)
+        // 最大化・全画面のままにして、元に戻したときにこのファイルの位置と大きさになるようにする
+        if window.isClassicMaximized {
+            window.setClassicRestoreFrame(frame)
+            return
+        }
+        if window.styleMask.contains(.fullScreen) {
+            pendingRememberedFrame = frame
+            return
+        }
         if frame != window.frame {
             window.setFrame(frame, display: true)
         }
@@ -1482,6 +1494,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func windowDidExitFullScreen(_ notification: Notification) {
+        if let frame = pendingRememberedFrame {
+            pendingRememberedFrame = nil
+            window.setFrame(frame, display: true)
+        }
         guard classicAfterFullScreenExit else { return }
         classicAfterFullScreenExit = false
         applyClassicUI()

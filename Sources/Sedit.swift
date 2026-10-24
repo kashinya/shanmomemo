@@ -270,9 +270,11 @@ final class SeditFunctionBar: NSView {
                 Sedit.green.setFill()
                 labelRect.fill()
                 let text = label.trimmingCharacters(in: .whitespaces)
-                let width = Sedit.textWidth(text, scale: scale)
-                // 半端なズームで名前が欄より少し広くなっても、左の数字にかぶせない
-                let x = labelRect.minX + max(0, ((labelRect.width - width) / 2 / cell).rounded(.down)) * cell
+                // 桁数で真ん中に寄せる（半端なズームでは幅の切り上げで 1 桁ぶん広く測れて、左の数字にかぶってた）
+                let rawWidth = (text as NSString).size(withAttributes: [.font: Sedit.font(scale: scale)]).width
+                let textCells = (rawWidth / cell).rounded()
+                let areaCells = (labelRect.width / cell).rounded()
+                let x = labelRect.minX + max(0, ((areaCells - textCells) / 2).rounded(.down)) * cell
                 Sedit.drawCell(text, at: x, height: height, background: Sedit.green, scale: scale)
             }
         }
