@@ -50,14 +50,10 @@ final class EditorLayoutManager: NSLayoutManager {
     }
 
     override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
-        // 1 ドットが画面の 1 ピクセルより小さいと、アンチエイリアスなしでは線ごと消える（三が二になる）ので、そのときは切らない。
+        // 切るのは、ドットが揃う大きさ（ズーム 100%・200%・300%）のときだけ（Sedit.dotsAreCrisp）。
         // 描くたびに測るので、Retina と普通の画面のあいだでウィンドウを動かしても合う
-        guard let dot = pixelFontDotSize, let context = NSGraphicsContext.current?.cgContext else {
-            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
-            return
-        }
-        let devicePixels = context.convertToDeviceSpace(CGSize(width: dot, height: dot))
-        guard min(abs(devicePixels.width), abs(devicePixels.height)) >= 0.99 else {
+        guard let dot = pixelFontDotSize, let context = NSGraphicsContext.current?.cgContext,
+              Sedit.dotsAreCrisp(dot: dot, in: context) else {
             super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
             return
         }

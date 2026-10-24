@@ -368,9 +368,22 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.beginEditing()
         textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
         textStorage.endEditing()
-        updateTextInsets()       // SEDIT 風の左の余白は半角 4 桁ぶん（ズームで変わる）
+        updateTextInsets()
         updateSeditWrapWidth()   // ズームで ↓ の幅が変わる
         refreshRulers()          // 行番号と桁の幅もフォントに合わせる
+        // SEDIT 風の上の行と下の欄も、ズームに合わせて大きくする
+        if seditLine.scale != seditScale || functionBar.scale != seditScale {
+            seditLine.scale = seditScale
+            functionBar.scale = seditScale
+            if Settings.shared.seditMode {
+                layoutContent()
+            }
+        }
+    }
+
+    /// SEDIT 風の上の行と下の欄の倍率（ズーム 100% = 1）
+    private var seditScale: CGFloat {
+        return CGFloat(zoomPercent) / 100
     }
 
     func applyWordWrap() {
@@ -566,7 +579,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         /// SEDIT 風なら、いちばん上の行とファンクションキーの欄を取って、残りを返す
         func carveSeditRows(_ area: NSRect) -> NSRect {
             guard sedit else { return area }
-            let row = Sedit.rowHeight
+            let row = (Sedit.rowHeight * seditScale).rounded()
             seditLine.frame = NSRect(x: area.minX, y: area.minY, width: area.width, height: row)
             functionBar.frame = NSRect(x: area.minX, y: max(area.minY, area.maxY - row), width: area.width, height: row)
             return NSRect(x: area.minX, y: area.minY + row, width: area.width, height: max(0, area.height - row * 2))
