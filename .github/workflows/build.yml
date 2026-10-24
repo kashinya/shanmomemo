@@ -59,6 +59,21 @@ jobs:
           path: Memocho.zip
           if-no-files-found: error
 
+      # 大きさと起動の速さ（参考。ここが失敗してもビルドは失敗にせん）。ランナーは Apple シリコンなので arm64 の分
+      - name: Size and launch time
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          APP="build/メモ帳.app"
+          du -sk "$APP"
+          ls -l "$APP/Contents/MacOS/Memocho" "$APP/Contents/Resources"
+          for ARCH in arm64 x86_64; do
+            lipo -thin "$ARCH" -output "$RUNNER_TEMP/Memocho-$ARCH" "$APP/Contents/MacOS/Memocho"
+            echo "$ARCH: $(stat -f %z "$RUNNER_TEMP/Memocho-$ARCH") B"
+          done
+          xcrun swiftc -O -o "$RUNNER_TEMP/launch-time" tools/launch-time.swift
+          "$RUNNER_TEMP/launch-time" "$APP" 6
+
       # ロゴなしのビルド（こっちもアップロードせん）
       - name: Build without SHANMO logo (arm64 only)
         env:
