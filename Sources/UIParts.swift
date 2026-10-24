@@ -10,9 +10,12 @@ final class FixedLineHeightDelegate: NSObject, NSLayoutManagerDelegate {
     private(set) var lineHeight: CGFloat = 0
     private(set) var baselineOffset: CGFloat = 0
 
-    func update(for font: NSFont, layoutManager: NSLayoutManager) {
-        lineHeight = layoutManager.defaultLineHeight(for: font)
-        baselineOffset = layoutManager.defaultBaselineOffset(for: font)
+    /// spacing: 行間の倍率（［書式］→［行間］）。広げた分は行の上と下に半分ずつ
+    func update(for font: NSFont, layoutManager: NSLayoutManager, spacing: CGFloat = 1) {
+        let natural = layoutManager.defaultLineHeight(for: font)
+        // 広げるときは整数に丸める（PC-9800 フォントのドットがピクセルからずれんように）
+        lineHeight = spacing == 1 ? natural : (natural * spacing).rounded()
+        baselineOffset = layoutManager.defaultBaselineOffset(for: font) + ((lineHeight - natural) / 2).rounded(.down)
     }
 
     func layoutManager(_ layoutManager: NSLayoutManager,
@@ -29,56 +32,193 @@ final class FixedLineHeightDelegate: NSObject, NSLayoutManagerDelegate {
     }
 }
 
+/// 本文の文字を描く NSLayoutManager。PC-9800 フォントのときはアンチエイリアスを切って、ドットのギザギザをそのまま出す。
+/// NSTextView の draw で切っても途中で戻されることがあるので、グリフを描くところで CGContext ごと切る。
+final class EditorLayoutManager: NSLayoutManager {
+    /// PC-9800 フォントの 1 ドットの大きさ（pt、1/16 em）。nil = 普通に描く
+    var pixelFontDotSize: CGFloat?
+
+    /// 最後の改行のあとの空の行（と空の文書の 1 行目）は delegate を通らんので、行間を広げても高さが元のまま。ほかの行に揃える
+    override func setExtraLineFragmentRect(_ fragmentRect: NSRect, usedRect: NSRect, textContainer container: NSTextContainer) {
+        var fragmentRect = fragmentRect
+        var usedRect = usedRect
+        if let lineHeight = (delegate as? FixedLineHeightDelegate)?.lineHeight, lineHeight > 0, !fragmentRect.isEmpty {
+            fragmentRect.size.height = lineHeight
+            usedRect.size.height = lineHeight
+        }
+        super.setExtraLineFragmentRect(fragmentRect, usedRect: usedRect, textContainer: container)
+    }
+
+    override func drawGlyphs(forGlyphRange glyphsToShow: NSRange, at origin: NSPoint) {
+        // 1 ドットが画面の 1 ピクセルより小さいと、アンチエイリアスなしでは線ごと消える（三が二になる）ので、そのときは切らない。
+        // 描くたびに測るので、Retina と普通の画面のあいだでウィンドウを動かしても合う
+        guard let dot = pixelFontDotSize, let context = NSGraphicsContext.current?.cgContext else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+        let devicePixels = context.convertToDeviceSpace(CGSize(width: dot, height: dot))
+        guard min(abs(devicePixels.width), abs(devicePixels.height)) >= 0.99 else {
+            super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+            return
+        }
+        context.saveGState()
+        context.setAllowsAntialiasing(false)   // グラフィックス状態に含まれへんので、下で手で戻す
+        context.setShouldAntialias(false)
+        super.drawGlyphs(forGlyphRange: glyphsToShow, at: origin)
+        context.restoreGState()
+        context.setAllowsAntialiasing(true)
+    }
+}
+
 /// Windows 10 のメモ帳風ステータスバー:  行 1、列 1 | 100% | Windows (CRLF) | UTF-8
 final class StatusBarView: NSView {
     static let height: CGFloat = 22
 
     private let positionLabel = StatusBarView.makeLabel()
+    private let characterLabel = StatusBarView.makeLabel()
     private let zoomLabel = StatusBarView.makeLabel()
     private let lineEndingLabel = StatusBarView.makeLabel()
     private let encodingLabel = StatusBarView.makeLabel()
 
-    /// 左から 位置 / ズーム / 改行 / 文字コード の欄幅（右寄せで並べる）
-    private let columnWidths: [CGFloat] = [160, 60, 130, 140]
+    private static let labelFont = NSFont.systemFont(ofSize: 11)
+
+    /// 欄の幅は、それぞれ出しうるいちばん長い表示に合わせて詰めてある（文字数を出さなければ、本文 500pt 幅でも左はじにロゴが入る）
+    private static func columnWidth(_ samples: [String]) -> CGFloat {
+        let attributes: [NSAttributedString.Key: Any] = [.font: StatusBarView.labelFont]
+        let widest = samples.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0
+        return ceil(widest) + 20   // 区切り線からの余白 10 + 右の余白 4 + ラベル内側の余白 6
+    }
+    private static let positionWidth = columnWidth(["行 99999、列 9999"])
+    private static let characterWidth = columnWidth(["9,999,999 / 9,999,999 文字"])
+    private static let zoomWidth = columnWidth(["500%"])
+    private static let lineEndingWidth = columnWidth(LineEnding.allCases.map { $0.displayName })
+    private static let encodingWidth = columnWidth(TextEncoding.allCases.map { $0.displayName })
+
+    /// ［表示］→［文字数］: 位置のとなりに文字数の欄を出す（Windows 11 のメモ帳と同じ並び）
+    var showsCharacterCount = false {
+        didSet {
+            if oldValue != showsCharacterCount {
+                layoutColumns()
+            }
+        }
+    }
+
+    /// 左から 位置 /（文字数）/ ズーム / 改行 / 文字コード。右寄せで並べる
+    private var columns: [(label: NSTextField, width: CGFloat)] {
+        var columns: [(label: NSTextField, width: CGFloat)] = [(positionLabel, StatusBarView.positionWidth)]
+        if showsCharacterCount {
+            columns.append((characterLabel, StatusBarView.characterWidth))
+        }
+        columns.append((zoomLabel, StatusBarView.zoomWidth))
+        columns.append((lineEndingLabel, StatusBarView.lineEndingWidth))
+        columns.append((encodingLabel, StatusBarView.encodingWidth))
+        return columns
+    }
+
+    /// 入りきらんときは、ズーム → 改行 → 文字コード の順に隠す（位置と文字数は残す）
+    private var visibleColumns: [(label: NSTextField, width: CGFloat)] {
+        var visible = columns
+        for droppable in [zoomLabel, lineEndingLabel, encodingLabel] {
+            guard visible.reduce(0, { $0 + $1.width }) > bounds.width else { break }
+            visible.removeAll { $0.label === droppable }
+        }
+        return visible
+    }
+
+    private var allLabels: [NSTextField] {
+        return [positionLabel, characterLabel, zoomLabel, lineEndingLabel, encodingLabel]
+    }
+
+    /// 左はじの SHANMO ロゴ（Resources/StatusLogo.png）
+    private let logoView: NSImageView? = {
+        guard let image = NSImage(named: "StatusLogo"), image.size.height > 0 else { return nil }
+        let height: CGFloat = 16
+        let view = NSImageView(image: image)
+        view.imageScaling = .scaleProportionallyUpOrDown
+        view.frame = NSRect(x: 8, y: 3, width: (height * image.size.width / image.size.height).rounded(), height: height)
+        return view
+    }()
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
-        let labels = [positionLabel, zoomLabel, lineEndingLabel, encodingLabel]
-        var x = frameRect.width
-        for index in stride(from: labels.count - 1, through: 0, by: -1) {
-            x -= columnWidths[index]
-            let label = labels[index]
-            label.frame = NSRect(x: x + 10, y: 3, width: columnWidths[index] - 14, height: 16)
-            label.autoresizingMask = [.minXMargin]
+        for label in allLabels {
             addSubview(label)
         }
+        if let logoView = logoView {
+            addSubview(logoView)
+        }
+        layoutColumns()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not used")
     }
 
-    override var isOpaque: Bool { return true }
-
-    override func setFrameSize(_ newSize: NSSize) {
-        super.setFrameSize(newSize)
+    private func layoutColumns() {
+        let visible = visibleColumns
+        for label in allLabels {
+            label.isHidden = !visible.contains { $0.label === label }
+        }
+        var x = bounds.width
+        for column in visible.reversed() {
+            x -= column.width
+            column.label.frame = NSRect(x: x + 10, y: 3, width: column.width - 14, height: 16)
+        }
+        // ウィンドウが狭くて欄とぶつかるときはロゴを隠す
+        if let logoView = logoView {
+            logoView.isHidden = logoView.frame.maxX + 8 > x
+        }
         needsDisplay = true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
-        NSColor.windowBackgroundColor.setFill()
-        bounds.fill()
-        NSColor.separatorColor.setFill()
-        NSRect(x: 0, y: bounds.height - 1, width: bounds.width, height: 1).fill()
-        var x = bounds.width
-        for width in columnWidths.reversed() {
-            x -= width
-            NSRect(x: x, y: 4, width: 1, height: bounds.height - 9).fill()
+    override var isOpaque: Bool { return true }
+
+    /// 上が y = 0（ラベルとロゴは上下の真ん中なので、どっち向きでも同じ位置）
+    override var isFlipped: Bool { return true }
+
+    /// Windows 2000 風: ボタン色の地に、へこんだ欄を並べる
+    var classic = false {
+        didSet {
+            for label in allLabels {
+                label.textColor = classic ? .black : .secondaryLabelColor
+            }
+            needsDisplay = true
         }
     }
 
-    func update(line: Int, column: Int, zoom: Int, lineEnding: LineEnding, encoding: TextEncoding) {
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        layoutColumns()
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let widths = visibleColumns.map { $0.width }
+        if classic {
+            Classic.face.setFill()
+            bounds.fill()
+            var x = bounds.width
+            for width in widths.reversed() {
+                x -= width
+                Classic.drawEdge(NSRect(x: x + 2, y: 2, width: width - 2, height: bounds.height - 2), Classic.thinSunken)
+            }
+            Classic.drawEdge(NSRect(x: 0, y: 2, width: max(0, x), height: bounds.height - 2), Classic.thinSunken)
+            return
+        }
+        NSColor.windowBackgroundColor.setFill()
+        bounds.fill()
+        NSColor.separatorColor.setFill()
+        NSRect(x: 0, y: 0, width: bounds.width, height: 1).fill()
+        var x = bounds.width
+        for width in widths.reversed() {
+            x -= width
+            NSRect(x: x, y: 5, width: 1, height: bounds.height - 9).fill()
+        }
+    }
+
+    /// characters: 文字数の欄に出す文字（「1,234 文字」「12 / 1,234 文字」）
+    func update(line: Int, column: Int, characters: String, zoom: Int, lineEnding: LineEnding, encoding: TextEncoding) {
         positionLabel.stringValue = "行 \(line)、列 \(column)"
+        characterLabel.stringValue = characters
         zoomLabel.stringValue = "\(zoom)%"
         lineEndingLabel.stringValue = lineEnding.displayName
         encodingLabel.stringValue = encoding.displayName
@@ -86,7 +226,7 @@ final class StatusBarView: NSView {
 
     private static func makeLabel() -> NSTextField {
         let label = NSTextField(labelWithString: "")
-        label.font = NSFont.systemFont(ofSize: 11)
+        label.font = StatusBarView.labelFont
         label.textColor = .secondaryLabelColor
         label.lineBreakMode = .byTruncatingTail
         return label
@@ -165,8 +305,19 @@ struct SaveChoice {
 }
 
 enum FilePanels {
-    static func runOpen() -> OpenChoice? {
+    /// iCloud Drive の場所（システム設定で iCloud Drive を使ってるとき）。
+    /// アプリ専用の iCloud の入れ物は有料の開発者登録と署名が要るので、iCloud Drive の普通のフォルダを使う
+    static var iCloudDrive: URL {
+        return FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
+    }
+
+    /// directory: 最初に開く場所（nil = いつもの場所）
+    static func runOpen(directory: URL? = nil) -> OpenChoice? {
         let panel = NSOpenPanel()
+        if let directory = directory {
+            panel.directoryURL = directory
+        }
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
@@ -208,7 +359,7 @@ final class PrintTextView: NSTextView {
     }
 
     static func make(text: String, title: String, width: CGFloat) -> PrintTextView {
-        let font = Settings.shared.font
+        let font = Settings.shared.editorFont
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
             .paragraphStyle: EditorWindowController.paragraphStyle(for: font),
@@ -217,7 +368,7 @@ final class PrintTextView: NSTextView {
         let storage = NSTextStorage(string: text, attributes: attributes)
         let layoutManager = NSLayoutManager()
         let lineHeight = FixedLineHeightDelegate()
-        lineHeight.update(for: font, layoutManager: layoutManager)
+        lineHeight.update(for: font, layoutManager: layoutManager, spacing: Settings.shared.lineSpacing)
         layoutManager.delegate = lineHeight
         storage.addLayoutManager(layoutManager)
 

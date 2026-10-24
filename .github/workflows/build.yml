@@ -1,0 +1,148 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 配布条件のわからん PC-9800 フォントを public なアーティファクトで配らんよう、ここはフォントなし
+      - name: Build (arm64 + x86_64)
+        id: build
+        env:
+          NO_PC98_FONT: "1"
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+
+      - name: Check universal binary
+        run: |
+          ARCHS_FOUND="$(lipo -archs "build/メモ帳.app/Contents/MacOS/Memocho")"
+          echo "$ARCHS_FOUND"
+          for ARCH in arm64 x86_64; do
+            case " $ARCHS_FOUND " in
+              *" $ARCH "*) ;;
+              *) echo "::error::$ARCH が入ってない" >&2; exit 1 ;;
+            esac
+          done
+
+      - name: Check icon
+        run: |
+          for ICON in AppIcon AppIcon-plain; do
+            iconutil --convert iconset --output "$RUNNER_TEMP/$ICON.iconset" "Resources/$ICON.icns"
+            ls "$RUNNER_TEMP/$ICON.iconset"
+          done
+
+      - name: Zip app
+        if: success()
+        run: ditto -c -k --keepParent "build/メモ帳.app" Memocho.zip
+
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: Memocho-app
+          path: Memocho.zip
+          if-no-files-found: error
+
+      # 大きさと起動の速さ（参考。ここが失敗してもビルドは失敗にせん）。ランナーは Apple シリコンなので arm64 の分
+      - name: Size and launch time
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          APP="build/メモ帳.app"
+          du -sk "$APP"
+          ls -l "$APP/Contents/MacOS/Memocho" "$APP/Contents/Resources"
+          for ARCH in arm64 x86_64; do
+            lipo -thin "$ARCH" -output "$RUNNER_TEMP/Memocho-$ARCH" "$APP/Contents/MacOS/Memocho"
+            echo "$ARCH: $(stat -f %z "$RUNNER_TEMP/Memocho-$ARCH") B"
+          done
+          xcrun swiftc -O -o "$RUNNER_TEMP/launch-time" tools/launch-time.swift
+          "$RUNNER_TEMP/launch-time" "$APP" 6
+
+      # 大きさ優先の最適化（-Osize）にしたらどれだけ小さくなるか（参考、アップロードせん）
+      - name: Size with -Osize (reference)
+        continue-on-error: true
+        env:
+          NO_PC98_FONT: "1"
+          SWIFT_OPT: "-Osize"
+        run: |
+          set -o pipefail
+          ./build.sh > /dev/null
+          for ARCH in arm64 x86_64; do
+            lipo -thin "$ARCH" -output "$RUNNER_TEMP/Memocho-Osize-$ARCH" "build/メモ帳.app/Contents/MacOS/Memocho"
+            echo "-Osize $ARCH: $(stat -f %z "$RUNNER_TEMP/Memocho-Osize-$ARCH") B"
+          done
+          "$RUNNER_TEMP/launch-time" "build/メモ帳.app" 6
+
+      # ロゴなしのビルド（こっちもアップロードせん）
+      - name: Build without SHANMO logo (arm64 only)
+        env:
+          ARCHS: arm64
+          NO_PC98_FONT: "1"
+          NO_SHANMO_LOGO: "1"
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+          RES="build/メモ帳.app/Contents/Resources"
+          if [ -e "$RES/StatusLogo.png" ]; then echo "::error::ロゴなしやのに StatusLogo.png が入ってる" >&2; exit 1; fi
+          cmp "$RES/AppIcon.icns" Resources/AppIcon-plain.icns
+          codesign --verify --strict --verbose=1 "build/メモ帳.app"
+
+      # フォントを落として埋め込む流れと、埋め込んだあとの署名が通るか（こっちはアップロードせん）
+      - name: Build with PC-9800 font (arm64 only)
+        env:
+          ARCHS: arm64
+        run: |
+          set -o pipefail
+          ./build.sh 2>&1 | tee build.log
+          FONT="build/メモ帳.app/Contents/Resources/Fonts/pc-9800.ttf"
+          if [ -f "$FONT" ]; then
+            codesign --verify --strict --verbose=1 "build/メモ帳.app"
+          else
+            echo "::warning::PC-9800 フォントが埋め込まれてない（retro-type.com から取れなかった？）"
+          fi
+
+      - name: Post compiler errors to PR
+        if: failure() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          touch build.log
+          # error: の行と、その下のソース行・キャレット行を拾う。arm64 と x86_64 で同じものが出るので重複は消す
+          awk '
+            /: error: / { n = 3 }
+            n > 0 { print; n--; if (n == 0) print "" }
+          ' build.log | awk 'BEGIN { RS = ""; ORS = "\n\n" } !seen[$0]++' > errors.txt
+          {
+            echo "### ビルド失敗 (\`${SHA:0:7}\`)"
+            echo
+            echo "$(grep -c ': error: ' errors.txt || true) 件の error（arm64 / x86_64 の重複は除いた） — [ログ]($RUN_URL)"
+            echo
+            echo '```'
+            if [ -s errors.txt ]; then
+              head -c 55000 errors.txt
+            else
+              echo "(error: の行なし。ログの末尾)"
+              tail -n 60 build.log
+            fi
+            echo '```'
+          } > comment.md
+          gh api "repos/${{ github.repository }}/issues/$PR/comments" -F body=@comment.md > /dev/null

@@ -26,20 +26,25 @@ enum MainMenu {
 
         // ファイル
         let fileMenu = NSMenu(title: "ファイル")
-        fileMenu.addItem(item("新規", #selector(EditorWindowController.fileNew(_:)), "n"))
-        fileMenu.addItem(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n", [.command, .shift]))
+        fileMenu.addItem(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n"))
+        // Windows の Ctrl+Shift+N の癖で ⇧⌘N を押しても同じ（メニューには出さない）
+        fileMenu.addItem(hidden(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n", [.command, .shift])))
         fileMenu.addItem(item("開く…", #selector(EditorWindowController.fileOpen(_:)), "o"))
+        fileMenu.addItem(item("iCloud Drive から開く…", #selector(EditorWindowController.fileOpenFromICloud(_:))))
         let reopenItem = NSMenuItem(title: "文字コードを指定して開き直す", action: nil, keyEquivalent: "")
         reopenItem.submenu = encodingMenu(title: "文字コードを指定して開き直す",
                                           action: #selector(EditorWindowController.reopenWithEncoding(_:)))
         fileMenu.addItem(reopenItem)
         fileMenu.addItem(item("上書き保存", #selector(EditorWindowController.fileSave(_:)), "s"))
         fileMenu.addItem(item("名前を付けて保存…", #selector(EditorWindowController.fileSaveAs(_:)), "s", [.command, .shift]))
+        fileMenu.addItem(item("iCloud Drive に保存…", #selector(EditorWindowController.fileSaveToICloud(_:))))
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(item("ページ設定…", #selector(NSApplication.runPageLayout(_:)), "p", [.command, .shift]))
         fileMenu.addItem(item("印刷…", #selector(EditorWindowController.filePrint(_:)), "p"))
         fileMenu.addItem(NSMenuItem.separator())
         fileMenu.addItem(item("閉じる", #selector(NSWindow.performClose(_:)), "w"))
+        fileMenu.addItem(NSMenuItem.separator())
+        fileMenu.addItem(item("\(name)の終了", #selector(NSApplication.terminate(_:))))
         add(fileMenu, to: mainMenu)
 
         // 編集
@@ -58,6 +63,7 @@ enum MainMenu {
         editMenu.addItem(item("置換…", #selector(EditorWindowController.showReplacePanel(_:)), "f", [.command, .option]))
         editMenu.addItem(item("選択範囲を検索に使用", #selector(EditorWindowController.useSelectionForFind(_:)), "e"))
         editMenu.addItem(item("行へ移動…", #selector(EditorWindowController.goToLine(_:)), "l"))
+        editMenu.addItem(item("ファイルを挿入…", #selector(EditorWindowController.insertFile(_:))))
         editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(item("すべて選択", #selector(NSText.selectAll(_:)), "a"))
         editMenu.addItem(item("日付と時刻", #selector(EditorWindowController.insertDateTime(_:)),
@@ -72,6 +78,16 @@ enum MainMenu {
         // 書式
         let formatMenu = NSMenu(title: "書式")
         formatMenu.addItem(item("右端で折り返す", #selector(AppDelegate.toggleWordWrap(_:))))
+        formatMenu.addItem(item(Settings.hasPC98Font ? "等幅フォント（PC-9800）" : "等幅フォント",
+                                #selector(AppDelegate.toggleMonospaceFont(_:))))
+        let lineSpacingItem = NSMenuItem(title: "行間", action: nil, keyEquivalent: "")
+        let lineSpacingMenu = NSMenu(title: "行間")
+        for percent in Settings.lineSpacingChoices {
+            let title = percent == 100 ? "標準" : "\(String(format: "%g", Double(percent) / 100)) 倍"
+            lineSpacingMenu.addItem(item(title, #selector(AppDelegate.setLineSpacing(_:)), tag: percent))
+        }
+        lineSpacingItem.submenu = lineSpacingMenu
+        formatMenu.addItem(lineSpacingItem)
         formatMenu.addItem(item("フォント…", #selector(AppDelegate.showFontPanel(_:)), "t"))
         formatMenu.addItem(NSMenuItem.separator())
         let saveEncodingItem = NSMenuItem(title: "保存時の文字コード", action: nil, keyEquivalent: "")
@@ -101,7 +117,37 @@ enum MainMenu {
         zoomItem.submenu = zoomMenu
         viewMenu.addItem(zoomItem)
         viewMenu.addItem(item("ステータス バー", #selector(AppDelegate.toggleStatusBar(_:))))
+        viewMenu.addItem(item("文字数", #selector(AppDelegate.toggleCharacterCount(_:))))
+        viewMenu.addItem(item("行番号", #selector(AppDelegate.toggleLineNumbers(_:))))
+        viewMenu.addItem(item("桁ルーラー", #selector(AppDelegate.toggleColumnRuler(_:))))
+        let themeItem = NSMenuItem(title: "テーマ", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu(title: "テーマ")
+        for (index, theme) in EditorTheme.all.enumerated() {
+            themeMenu.addItem(item(theme.name, #selector(AppDelegate.setTheme(_:)), tag: index))
+            if theme.id == EditorTheme.dark.id {
+                themeMenu.addItem(NSMenuItem.separator())   // 標準の 3 つと Panic のを分ける
+            }
+        }
+        themeMenu.addItem(NSMenuItem.separator())
+        themeMenu.addItem(item("テーマの設定…", #selector(AppDelegate.showThemePanel(_:))))
+        themeItem.submenu = themeMenu
+        viewMenu.addItem(themeItem)
+        viewMenu.addItem(NSMenuItem.separator())
+        viewMenu.addItem(item("Windows 2000 風", #selector(AppDelegate.toggleClassicUI(_:))))
+        viewMenu.addItem(item("Mac のメニューバーと Dock を隠す", #selector(AppDelegate.toggleHideMacMenuBar(_:))))
+        viewMenu.addItem(NSMenuItem.separator())
+        viewMenu.addItem(item("SEDIT 風", #selector(AppDelegate.toggleSeditMode(_:))))
         add(viewMenu, to: mainMenu)
+
+        // マクロ（キーボードマクロ）
+        let macroMenu = NSMenu(title: "マクロ")
+        macroMenu.addItem(item("記録を始める", #selector(AppDelegate.toggleMacroRecording(_:)), "r", [.command, .option]))
+        macroMenu.addItem(item("実行", #selector(AppDelegate.playMacro(_:)), "p", [.command, .option]))
+        macroMenu.addItem(item("回数を指定して実行…", #selector(AppDelegate.playMacroRepeatedly(_:)), "p", [.command, .option, .shift]))
+        macroMenu.addItem(NSMenuItem.separator())
+        macroMenu.addItem(item("マクロを開く…", #selector(AppDelegate.openMacro(_:))))
+        macroMenu.addItem(item("マクロを保存…", #selector(AppDelegate.saveMacro(_:))))
+        add(macroMenu, to: mainMenu)
 
         // ウインドウ
         let windowMenu = NSMenu(title: "ウインドウ")
