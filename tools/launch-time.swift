@@ -32,7 +32,7 @@ for run in 1...runs {
         print("起動できない: \(error)")
         exit(1)
     }
-    let deadline = Date().addingTimeInterval(30)
+    let deadline = Date().addingTimeInterval(15)
     while process.isRunning, Date() < deadline {
         usleep(10_000)
     }
@@ -41,12 +41,18 @@ for run in 1...runs {
     }
     process.waitUntilExit()
     let output = String(data: errorPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-    if let line = output.split(separator: "\n").first(where: { $0.hasPrefix("launch-probe: ") }),
-       let value = Double(line.dropFirst("launch-probe: ".count)) {
-        times.append(value)
-        print(String(format: "%ld 回目: %.0f ms", run, value))
+    // 「launch-probe 区切り: ミリ秒」の行を拾う。window まで来てたら測れた
+    let marks = output.split(separator: "\n").compactMap { line -> (String, Double)? in
+        guard line.hasPrefix("launch-probe "), let colon = line.firstIndex(of: ":"),
+              let value = Double(line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)) else { return nil }
+        return (String(line[line.index(line.startIndex, offsetBy: "launch-probe ".count)..<colon]), value)
+    }
+    let detail = marks.map { String(format: "%@ %.0f", $0.0, $0.1) }.joined(separator: " → ")
+    if let window = marks.first(where: { $0.0 == "window" }) {
+        times.append(window.1)
+        print(String(format: "%ld 回目: %.0f ms（%@）", run, window.1, detail))
     } else {
-        print("\(run) 回目: 測れなかった（終了コード \(process.terminationStatus)）")
+        print("\(run) 回目: ウィンドウまで来んかった（\(detail.isEmpty ? "区切りなし" : detail)、終了コード \(process.terminationStatus)）")
         print(output.suffix(2000))
     }
     usleep(500_000)

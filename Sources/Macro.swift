@@ -145,23 +145,41 @@ final class MacroRecorder {
     ]
 
     /// メニュー（の中のメニュー）から、このキーで動く項目を探す。隠れてる項目（F3 など）も含める。
-    /// key: Shift だけ効かせた文字（NSEvent の charactersIgnoringModifiers）
+    /// key: Shift だけ効かせた文字（NSEvent の charactersIgnoringModifiers）。
+    /// まず修飾キーがぴったり合う項目を探して、無ければ「+」のように Shift で打つ記号だけ、Shift を問わずに探す
+    /// （JIS キーボードの ⌘+ は ⇧⌘; で打つ）
     private static func menuItem(key: String, modifiers: NSEvent.ModifierFlags, in menu: NSMenu?) -> NSMenuItem? {
+        return menuItem(key: key, modifiers: modifiers, in: menu, ignoringShift: false)
+            ?? menuItem(key: key, modifiers: modifiers, in: menu, ignoringShift: true)
+    }
+
+    private static func menuItem(key: String, modifiers: NSEvent.ModifierFlags, in menu: NSMenu?,
+                                 ignoringShift: Bool) -> NSMenuItem? {
         guard let menu = menu, !key.isEmpty else { return nil }
+        if ignoringShift {
+            // F3 などのファンクションキー（U+F700〜）は記号やない。Shift 付きは別の項目（⇧F3 = 前を検索）
+            let isFunctionKey = key.unicodeScalars.contains { (0xF700...0xF8FF).contains($0.value) }
+            guard !isFunctionKey, key.lowercased() == key.uppercased() else { return nil }
+        }
         let relevant: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
         let pressed = modifiers.intersection(relevant)
         for item in menu.items {
-            if let found = menuItem(key: key, modifiers: modifiers, in: item.submenu) {
+            if let found = menuItem(key: key, modifiers: modifiers, in: item.submenu, ignoringShift: ignoringShift) {
                 return found
             }
             guard !item.keyEquivalent.isEmpty, item.keyEquivalent.lowercased() == key.lowercased() else { continue }
+            // 🌐（fn）が要る項目（macOS が［ウインドウ］に足す整列の ⌃🌐F など）は、🌐 を押してたときだけ
+            if item.keyEquivalentModifierMask.contains(.function) && !modifiers.contains(.function) {
+                continue
+            }
             var mask = item.keyEquivalentModifierMask.intersection(relevant)
             if item.keyEquivalent != item.keyEquivalent.lowercased() {
                 mask.insert(.shift)   // 大文字のショートカットは Shift 込み
             }
-            // 「+」のように Shift で打つ記号は、Shift はあってもなくても同じ（JIS キーボードの ⌘+ は ⇧⌘; で打つ）
-            let isSymbol = key.lowercased() == key.uppercased()
-            if mask == pressed || (isSymbol && item.keyEquivalent == key && mask.union(.shift) == pressed.union(.shift)) {
+            let matches = ignoringShift
+                ? item.keyEquivalent == key && mask.union(.shift) == pressed.union(.shift)
+                : mask == pressed
+            if matches {
                 return item
             }
         }

@@ -145,8 +145,9 @@ final class SeditStatusLine: NSView {
         func width(_ list: [Segment]) -> CGFloat {
             return list.reduce(0) { $0 + Sedit.textWidth($1.0) }
         }
-        // 入りきらんときは、文字数 → 文字コード → 改行コード の順に外す（場所は「…」まで縮む）
-        let room = bounds.width - Sedit.cellWidth * 2
+        // 入りきらんときは、文字数 → 文字コード → 改行コード の順に外す（場所は「…」まで縮む）。
+        // 左の水色 1 桁・いちばん短い場所「…」・すき間 2 桁のぶんは残す
+        let room = bounds.width - Sedit.cellWidth * 3 - Sedit.textWidth("…")
         if width(position + characterSegments + encodingSegments + lineEndingSegments) > room { characterSegments = [] }
         if width(position + characterSegments + encodingSegments + lineEndingSegments) > room { encodingSegments = [] }
         if width(position + characterSegments + encodingSegments + lineEndingSegments) > room { lineEndingSegments = [] }
@@ -188,12 +189,12 @@ final class SeditFunctionBar: NSView {
     private var layout: Layout {
         let cell = Sedit.cellWidth
         guard bounds.width >= cell * 80 else {
-            let span = cell * 6 * 10
-            return Layout(slot: cell * 6, groupGap: 0, origin: max(0, ((bounds.width - span) / 2 / cell).rounded(.down) * cell), compact: true)
+            let span = cell * 6 * 10 - cell   // 最後のキーの後ろのすき間は数えない
+            return Layout(slot: cell * 6, groupGap: 0, origin: max(0, ((bounds.width - span) / 2 / cell).rounded() * cell), compact: true)
         }
         let slot = (bounds.width / 10 / cell).rounded(.down) * cell
         let span = slot * 10   // 最後のすき間のぶんを 5 と 6 のあいだに回すので、ちょうど 10 個ぶん
-        return Layout(slot: slot, groupGap: cell, origin: ((bounds.width - span) / 2 / cell).rounded(.down) * cell, compact: false)
+        return Layout(slot: slot, groupGap: cell, origin: ((bounds.width - span) / 2 / cell).rounded() * cell, compact: false)
     }
 
     /// 押されたキーの番号（1〜10）

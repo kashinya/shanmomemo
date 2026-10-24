@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // MARK: - 起動・終了
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        LaunchProbe.mark("willFinishLaunching")
         NSWindow.allowsAutomaticWindowTabbing = false   // 「タブで開く」系をアプリごと封印
         EmbeddedFonts.register()                        // メニューを作る前に（等幅フォントの名前が変わる）
         NSApp.appearance = Settings.shared.theme.appearance
@@ -25,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         NSApp.mainMenu = MainMenu.make()
         // フォントパネルの変更は本文ビューやなくて、ここで受けて全ウィンドウに反映する
         NSFontManager.shared.action = #selector(AppDelegate.fontPanelChangedFont(_:))
+        LaunchProbe.mark("menu")
     }
 
     /// キーを、メニューや本文より先に見る:
@@ -49,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        LaunchProbe.mark("didFinishLaunching")
         applyPresentationOptions()
         // 念のため。起動時に何も開かれへんかったら「無題」を 1 枚出す
         DispatchQueue.main.async {
@@ -114,6 +117,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     @discardableResult
     func newWindow() -> EditorWindowController {
         let controller = EditorWindowController()
+        LaunchProbe.mark("controller")
         place(controller.window)
         controllers.append(controller)
         controller.window.makeKeyAndOrderFront(nil)
@@ -203,6 +207,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// ウィンドウが 1 枚も無いときだけここに来る
     @objc func fileOpen(_ sender: Any?) {
         guard let choice = FilePanels.runOpen() else { return }
+        open(choice.url, encoding: choice.encoding)
+    }
+
+    /// ［iCloud Drive から開く…］も、ウィンドウが 1 枚も無いときだけここに来る
+    @objc func fileOpenFromICloud(_ sender: Any?) {
+        guard let choice = FilePanels.runOpen(directory: FilePanels.iCloudDrive) else { return }
         open(choice.url, encoding: choice.encoding)
     }
 

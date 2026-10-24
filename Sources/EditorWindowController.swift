@@ -430,7 +430,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         guard Settings.shared.seditMode, Settings.shared.wordWrap else { return }
         let font = textView.typingAttributes[.font] as? NSFont
         let reserve = ceil((font?.pointSize ?? 16) / 2)
-        let width = max(0, scrollView.contentSize.width - textView.textContainerInset.width * 2 - reserve)
+        // すき間は左だけ（右は ↓ の reserve）
+        let width = max(0, scrollView.contentSize.width - textView.textContainerInset.width - reserve)
         let size = NSSize(width: width, height: EditorWindowController.unlimited)
         if textContainer.size != size {
             textContainer.size = size
@@ -840,8 +841,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     private func openWithPanel(directory: URL?) {
-        guard confirmDiscardIfNeeded() else { return }
-        guard let choice = FilePanels.runOpen(directory: directory) else {
+        // 「保存しますか?」やダイアログをキャンセルしたとき・開けんかったときは、マクロの再生もそこでやめる
+        guard confirmDiscardIfNeeded(), let choice = FilePanels.runOpen(directory: directory) else {
             MacroRecorder.shared.abortIfPlaying()
             return
         }
@@ -849,7 +850,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             other.window.makeKeyAndOrderFront(nil)
             return
         }
-        load(choice.url, encoding: choice.encoding)
+        if !load(choice.url, encoding: choice.encoding) {
+            MacroRecorder.shared.abortIfPlaying()
+        }
     }
 
     @objc func fileSave(_ sender: Any?) {
