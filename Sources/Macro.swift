@@ -106,19 +106,14 @@ final class MacroRecorder {
             textView.insertText(text, replacementRange: textView.selectedRange())
         case .command(let name):
             textView.doCommand(by: NSSelectorFromString(name))
-        case .menuKey(let characters, let charactersIgnoringModifiers, let keyCode, let modifiers):
-            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero,
-                                               modifierFlags: NSEvent.ModifierFlags(rawValue: modifiers),
-                                               timestamp: ProcessInfo.processInfo.systemUptime,
-                                               windowNumber: editor.window.windowNumber, context: nil,
-                                               characters: characters, charactersIgnoringModifiers: charactersIgnoringModifiers,
-                                               isARepeat: false, keyCode: keyCode) else { return }
-            // 手で書き換えたファイルなどに、元に戻す・マクロ自体の操作が入ってても動かさない
-            if let item = MacroRecorder.menuItem(matching: event, in: NSApp.mainMenu),
-               let action = item.action, MacroRecorder.macroActions.contains(action) {
-                return
-            }
-            _ = NSApp.mainMenu?.performKeyEquivalent(with: event)
+        case .menuKey(_, let key, _, let modifiers):
+            // キーを打ち直すのではなく、そのショートカットのメニュー項目を直接動かす。
+            // Mac のショートカットとして流すと、メニューバーが光ったり、再生を始めたときに押してた ⌥⌘ が混ざったりする。
+            // 手で書き換えたファイルに、元に戻す・マクロ自体の操作が入ってても動かさない
+            guard let item = MacroRecorder.menuItem(key: key, modifiers: NSEvent.ModifierFlags(rawValue: modifiers),
+                                                    in: NSApp.mainMenu),
+                  let action = item.action, !MacroRecorder.macroActions.contains(action) else { return }
+            MacroRecorder.run(item)
         case .sedit(let number):
             editor.performSeditFunction(number)
         }
@@ -128,7 +123,9 @@ final class MacroRecorder {
 
     /// このキーがメニューのショートカットなら覚える（マクロ自体の操作は覚えない）
     func recordMenuKeyIfNeeded(_ event: NSEvent) {
-        guard isRecording, !isPlaying, let item = MacroRecorder.menuItem(matching: event, in: NSApp.mainMenu),
+        guard isRecording, !isPlaying,
+              let item = MacroRecorder.menuItem(key: event.charactersIgnoringModifiers ?? "", modifiers: event.modifierFlags,
+                                                in: NSApp.mainMenu),
               let action = item.action, !MacroRecorder.macroActions.contains(action) else { return }
         record(.menuKey(characters: event.characters ?? "",
                         charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
@@ -147,26 +144,38 @@ final class MacroRecorder {
         Selector(("redo:")),
     ]
 
-    /// メニュー（の中のメニュー）から、このキーで動く項目を探す。隠れてる項目（F3 など）も含める
-    private static func menuItem(matching event: NSEvent, in menu: NSMenu?) -> NSMenuItem? {
-        guard let menu = menu else { return nil }
+    /// メニュー（の中のメニュー）から、このキーで動く項目を探す。隠れてる項目（F3 など）も含める。
+    /// key: Shift だけ効かせた文字（NSEvent の charactersIgnoringModifiers）
+    private static func menuItem(key: String, modifiers: NSEvent.ModifierFlags, in menu: NSMenu?) -> NSMenuItem? {
+        guard let menu = menu, !key.isEmpty else { return nil }
         let relevant: NSEvent.ModifierFlags = [.command, .option, .control, .shift]
-        let pressed = event.modifierFlags.intersection(relevant)
-        let key = (event.charactersIgnoringModifiers ?? "").lowercased()
+        let pressed = modifiers.intersection(relevant)
         for item in menu.items {
-            if let found = menuItem(matching: event, in: item.submenu) {
+            if let found = menuItem(key: key, modifiers: modifiers, in: item.submenu) {
                 return found
             }
-            guard !item.keyEquivalent.isEmpty, item.keyEquivalent.lowercased() == key else { continue }
+            guard !item.keyEquivalent.isEmpty, item.keyEquivalent.lowercased() == key.lowercased() else { continue }
             var mask = item.keyEquivalentModifierMask.intersection(relevant)
             if item.keyEquivalent != item.keyEquivalent.lowercased() {
                 mask.insert(.shift)   // 大文字のショートカットは Shift 込み
             }
-            if mask == pressed {
+            // 「+」のように Shift で打つ記号は、Shift はあってもなくても同じ（JIS キーボードの ⌘+ は ⇧⌘; で打つ）
+            let isSymbol = key.lowercased() == key.uppercased()
+            if mask == pressed || (isSymbol && item.keyEquivalent == key && mask.union(.shift) == pressed.union(.shift)) {
                 return item
             }
         }
         return nil
+    }
+
+    /// メニュー項目を、メニューから選んだのと同じに動かす。今使えない項目（選択がないときのコピーなど）は何もしない
+    private static func run(_ item: NSMenuItem) {
+        guard let menu = item.menu else { return }
+        let index = menu.index(of: item)
+        guard index >= 0 else { return }
+        menu.update()   // 有効・無効を今の状態で決め直す
+        guard item.isEnabled else { return }
+        menu.performActionForItem(at: index)
     }
 
     // MARK: - ファイル
