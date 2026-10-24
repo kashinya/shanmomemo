@@ -44,7 +44,7 @@ for ARCH in $ARCHS; do
     x86_64) MIN="$MIN_X86_64" ;;
     *) echo "対応してないアーキテクチャ: $ARCH" >&2; exit 1 ;;
   esac
-  echo "==> $ARCH 向けにコンパイル中（macOS $MIN 以降、$SWIFT_OPT）…"
+  echo "==> $ARCH 向けにコンパイル中（macOS $MIN 以降、${SWIFT_OPT}）…"
   "$SWIFTC" "$SWIFT_OPT" -whole-module-optimization -swift-version 5 \
     -sdk "$SDK" -target "$ARCH-apple-macos$MIN" \
     -module-name "$EXEC_NAME" \
