@@ -96,11 +96,17 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         setUpTextView()
         LaunchProbe.mark("textView")
         applyTheme()
+        LaunchProbe.mark("theme")
         applyWordWrap()
+        LaunchProbe.mark("wordWrap")
         applyClassicUI()
+        LaunchProbe.mark("classicUI")
         applySeditMode()
+        LaunchProbe.mark("seditMode")
         applyRulers()
+        LaunchProbe.mark("rulers")
         applyStatusBarVisibility()
+        LaunchProbe.mark("statusBar")
         updateTitle()
     }
 
