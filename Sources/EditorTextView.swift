@@ -22,7 +22,8 @@ final class EditorTextView: NSTextView {
     }
 
     override func insertText(_ string: Any, replacementRange: NSRange) {
-        if isHandlingKeyDown {
+        // 変換中の字がショートカットなどで確定したときは keyDown の外で来るので、変換中だったかでも見る
+        if isHandlingKeyDown || hasMarkedText() {
             let text = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
             if !text.isEmpty {
                 MacroRecorder.shared.record(.insert(text))
@@ -32,9 +33,14 @@ final class EditorTextView: NSTextView {
     }
 
     override func doCommand(by selector: Selector) {
-        if isHandlingKeyDown {
-            MacroRecorder.shared.record(.command(NSStringFromSelector(selector)))
+        guard isHandlingKeyDown else {
+            super.doCommand(by: selector)
+            return
         }
+        MacroRecorder.shared.record(.command(NSStringFromSelector(selector)))
+        // insertNewline: や insertTab: は中で insertText を呼ぶので、その字は二重に覚えない
+        isHandlingKeyDown = false
+        defer { isHandlingKeyDown = true }
         super.doCommand(by: selector)
     }
 

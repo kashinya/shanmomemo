@@ -88,6 +88,10 @@ final class FindPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     @discardableResult
     func findNext(in editor: EditorWindowController, backwards: Bool) -> Bool {
         if searchText.isEmpty {
+            if MacroRecorder.shared.isPlaying {
+                MacroRecorder.shared.abortRequested = true   // 何を探すか決まってないので止める
+                return false
+            }
             show(.find, for: editor)
             return false
         }

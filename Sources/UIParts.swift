@@ -89,7 +89,7 @@ final class StatusBarView: NSView {
         return ceil(widest) + 20   // 区切り線からの余白 10 + 右の余白 4 + ラベル内側の余白 6
     }
     private static let positionWidth = columnWidth(["行 99999、列 9999"])
-    private static let characterWidth = columnWidth(["99,999 / 9,999,999 文字"])
+    private static let characterWidth = columnWidth(["9,999,999 / 9,999,999 文字"])
     private static let zoomWidth = columnWidth(["500%"])
     private static let lineEndingWidth = columnWidth(LineEnding.allCases.map { $0.displayName })
     private static let encodingWidth = columnWidth(TextEncoding.allCases.map { $0.displayName })
@@ -113,6 +113,16 @@ final class StatusBarView: NSView {
         columns.append((lineEndingLabel, StatusBarView.lineEndingWidth))
         columns.append((encodingLabel, StatusBarView.encodingWidth))
         return columns
+    }
+
+    /// 入りきらんときは、ズーム → 改行 → 文字コード の順に隠す（位置と文字数は残す）
+    private var visibleColumns: [(label: NSTextField, width: CGFloat)] {
+        var visible = columns
+        for droppable in [zoomLabel, lineEndingLabel, encodingLabel] {
+            guard visible.reduce(0, { $0 + $1.width }) > bounds.width else { break }
+            visible.removeAll { $0.label === droppable }
+        }
+        return visible
     }
 
     private var allLabels: [NSTextField] {
@@ -145,9 +155,12 @@ final class StatusBarView: NSView {
     }
 
     private func layoutColumns() {
-        characterLabel.isHidden = !showsCharacterCount
+        let visible = visibleColumns
+        for label in allLabels {
+            label.isHidden = !visible.contains { $0.label === label }
+        }
         var x = bounds.width
-        for column in columns.reversed() {
+        for column in visible.reversed() {
             x -= column.width
             column.label.frame = NSRect(x: x + 10, y: 3, width: column.width - 14, height: 16)
         }
@@ -179,7 +192,7 @@ final class StatusBarView: NSView {
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        let widths = columns.map { $0.width }
+        let widths = visibleColumns.map { $0.width }
         if classic {
             Classic.face.setFill()
             bounds.fill()

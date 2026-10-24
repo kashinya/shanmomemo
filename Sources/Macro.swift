@@ -72,16 +72,30 @@ final class MacroRecorder {
         textView.breakUndoCoalescing()
         undoManager?.beginUndoGrouping()
         defer {
-            undoManager?.endUndoGrouping()
-            undoManager?.setActionName("マクロの実行")
-            textView.breakUndoCoalescing()
             isPlaying = false
+            abortRequested = false
+            if let undoManager = undoManager, undoManager.groupingLevel > 0 {
+                undoManager.endUndoGrouping()
+                undoManager.setActionName("マクロの実行")
+            }
+            textView.breakUndoCoalescing()
         }
         for _ in 0..<max(1, min(times, MacroRecorder.maxRepeat)) {
             for step in steps {
+                // 記録したときと同じく、いつもこのウィンドウの本文に効かせる（検索パネルなどが前に出てても）
+                if NSApp.keyWindow !== editor.window {
+                    editor.window.makeKeyAndOrderFront(nil)
+                }
                 perform(step, in: editor)
                 if abortRequested { return }
             }
+        }
+    }
+
+    /// 再生中にダイアログをキャンセルしたときなど: そこで止める
+    func abortIfPlaying() {
+        if isPlaying {
+            abortRequested = true
         }
     }
 
@@ -99,6 +113,11 @@ final class MacroRecorder {
                                                windowNumber: editor.window.windowNumber, context: nil,
                                                characters: characters, charactersIgnoringModifiers: charactersIgnoringModifiers,
                                                isARepeat: false, keyCode: keyCode) else { return }
+            // 手で書き換えたファイルなどに、元に戻す・マクロ自体の操作が入ってても動かさない
+            if let item = MacroRecorder.menuItem(matching: event, in: NSApp.mainMenu),
+               let action = item.action, MacroRecorder.macroActions.contains(action) {
+                return
+            }
             _ = NSApp.mainMenu?.performKeyEquivalent(with: event)
         case .sedit(let number):
             editor.performSeditFunction(number)
@@ -123,6 +142,9 @@ final class MacroRecorder {
         #selector(AppDelegate.playMacroRepeatedly(_:)),
         #selector(AppDelegate.saveMacro(_:)),
         #selector(AppDelegate.openMacro(_:)),
+        // 元に戻す・やり直しは、マクロ全体を 1 回の「元に戻す」にまとめてるのとぶつかるので覚えない
+        Selector(("undo:")),
+        Selector(("redo:")),
     ]
 
     /// メニュー（の中のメニュー）から、このキーで動く項目を探す。隠れてる項目（F3 など）も含める

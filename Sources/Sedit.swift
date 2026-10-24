@@ -120,27 +120,35 @@ final class SeditStatusLine: NSView {
         bounds.fill()
         let height = bounds.height
         // 数字は白地、見出しは水色地（SEDIT と同じ）
-        var segments: [(String, NSColor, NSColor)] = []   // 文字, 地, 字の色
+        typealias Segment = (String, NSColor, NSColor)   // 文字, 地, 字の色
+        var position: [Segment] = []
         if isRecording {
-            segments.append(("<記録中>", Sedit.red, Sedit.white))
-            segments.append((" ", Sedit.cyan, Sedit.black))
+            position.append(("<記録中>", Sedit.red, Sedit.white))
+            position.append((" ", Sedit.cyan, Sedit.black))
         }
-        segments += [
+        position += [
             ("<挿入>  ", Sedit.cyan, Sedit.black),
             (SeditStatusLine.pad(line, 5), Sedit.white, Sedit.black),
             ("/" + SeditStatusLine.pad(totalLines, 6) + "行 ", Sedit.cyan, Sedit.black),
             (SeditStatusLine.pad(column, 4), Sedit.white, Sedit.black),
             ("桁  ", Sedit.cyan, Sedit.black),
         ]
+        var characterSegments: [Segment] = []
         if let characters = characters {
-            segments.append((" " + characters, Sedit.white, Sedit.black))
-            segments.append(("字  ", Sedit.cyan, Sedit.black))
+            characterSegments = [(" " + characters, Sedit.white, Sedit.black), ("字  ", Sedit.cyan, Sedit.black)]
         }
-        segments += [
-            (" " + encoding + " ", Sedit.white, Sedit.black),
-            (" " + lineEnding + " ", Sedit.cyan, Sedit.black),
-        ]
-        let rightWidth = segments.reduce(0) { $0 + Sedit.textWidth($1.0) }
+        var encodingSegments: [Segment] = [(" " + encoding + " ", Sedit.white, Sedit.black)]
+        var lineEndingSegments: [Segment] = [(" " + lineEnding + " ", Sedit.cyan, Sedit.black)]
+        func width(_ list: [Segment]) -> CGFloat {
+            return list.reduce(0) { $0 + Sedit.textWidth($1.0) }
+        }
+        // 入りきらんときは、文字数 → 文字コード → 改行コード の順に外す（場所は「…」まで縮む）
+        let room = bounds.width - Sedit.cellWidth * 2
+        if width(position + characterSegments + encodingSegments + lineEndingSegments) > room { characterSegments = [] }
+        if width(position + characterSegments + encodingSegments + lineEndingSegments) > room { encodingSegments = [] }
+        if width(position + characterSegments + encodingSegments + lineEndingSegments) > room { lineEndingSegments = [] }
+        let segments = position + characterSegments + encodingSegments + lineEndingSegments
+        let rightWidth = width(segments)
         // 場所が長いときは頭を「…」にして、右の欄を押し出さない
         var shownPath = path
         let available = bounds.width - rightWidth - Sedit.cellWidth * 2

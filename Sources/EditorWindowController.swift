@@ -52,6 +52,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private var textAttributes: [NSAttributedString.Key: Any] = [:]
     private var caretLocation = 0
     private var lineCache: (location: Int, line: Int)?
+    private var rulerLineCache: (location: Int, line: Int)?
+    private var characterCountScheduled = false
     private var statusUpdateScheduled = false
     private var classicAfterFullScreenExit = false
 
@@ -258,11 +260,36 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     // MARK: - 文字数（改行は数えない。絵文字なども見た目どおり 1 文字）
 
+    /// 大きい文書は打つたびに数え直すと重いので、少し落ち着いてから数える（それまでは前の数）
     private var characterCount: Int {
         if let count = characterCountCache { return count }
+        if textStorage.length > 1_000_000 {
+            scheduleCharacterCount()
+            return lastCharacterCount
+        }
+        return countCharactersNow()
+    }
+
+    private var lastCharacterCount = 0
+
+    @discardableResult
+    private func countCharactersNow() -> Int {
         let count = max(0, textStorage.string.count - (totalLineCount - 1))
         characterCountCache = count
+        lastCharacterCount = count
         return count
+    }
+
+    private func scheduleCharacterCount() {
+        guard !characterCountScheduled else { return }
+        characterCountScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            self.characterCountScheduled = false
+            guard Settings.shared.showCharacterCount, self.characterCountCache == nil else { return }
+            self.countCharactersNow()
+            self.updateStatusNow()
+        }
     }
 
     private static let numberFormatter: NumberFormatter = {
@@ -278,10 +305,12 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     /// 選んでるときは「選んだ数 / 全体」
     private func characterCountText(unit: String) -> String {
         let total = EditorWindowController.formatted(characterCount)
-        let selection = textView.selectedRange()
-        guard selection.length > 0 else { return total + unit }
-        let selected = textStorage.mutableString.substring(with: selection)
-        let count = selected.count - countNewlines(in: selection)
+        // ⌥ドラッグの矩形選択などで何か所も選んでるときは足し合わせる
+        let ranges = textView.selectedRanges.map { $0.rangeValue }.filter { $0.length > 0 }
+        guard !ranges.isEmpty else { return total + unit }
+        let count = ranges.reduce(0) { sum, range in
+            sum + textStorage.mutableString.substring(with: range).count - countNewlines(in: range)
+        }
         return EditorWindowController.formatted(max(0, count)) + " / " + total + unit
     }
 
@@ -496,6 +525,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         backgroundView.image = BackgroundImage.image
         backgroundView.imageOpacity = settings.backgroundImageOpacity
         updateWindowBackground()
+        refreshRulers()
     }
 
     private func updateWindowBackground() {
@@ -661,6 +691,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.endEditing()
         textView.undoManager?.removeAllActions()
         lineCache = nil
+        rulerLineCache = nil
         totalLinesCache = nil
         characterCountCache = nil
         updateTextViewMinSize()
@@ -866,7 +897,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         alert.accessoryView = field
         alert.layout()
         alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
 
         let raw = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let digits = raw.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? raw
@@ -885,7 +919,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     /// ［編集］→［ファイルを挿入…］（SEDIT の f・4）: 選んだファイルの中身をカーソルの位置に入れる
     @objc func insertFile(_ sender: Any?) {
-        guard let choice = FilePanels.runOpen() else { return }
+        guard let choice = FilePanels.runOpen() else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
         let loaded: FileIO.Loaded
         do {
             loaded = try FileIO.load(choice.url, encoding: choice.encoding)
@@ -932,6 +969,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     /// ｺﾝﾄﾛｰﾙ: ［ファイル］メニューをその場に出す
     private func popUpControlMenu() {
+        // SEDIT 風でないとき（それで記録したマクロを再生したときなど）は、下の欄が無いので出さない
+        guard functionBar.window != nil else {
+            NSSound.beep()
+            return
+        }
         guard let fileMenu = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "ファイル" })?.submenu,
               let menu = fileMenu.copy() as? NSMenu else { return }
         let rect = functionBar.itemRect(4)
@@ -1054,6 +1096,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.didChangeText()
         textView.undoManager?.setActionName("すべて置換")
         lineCache = nil
+        rulerLineCache = nil
         totalLinesCache = nil
         characterCountCache = nil
         return ranges.count
@@ -1082,18 +1125,27 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func lineNumber(at location: Int) -> Int {
+        return lineNumber(at: location, cache: &lineCache)
+    }
+
+    func rulerLineNumber(at location: Int) -> Int {
+        return lineNumber(at: location, cache: &rulerLineCache)
+    }
+
+    /// 前に数えた位置からの差だけ数える
+    private func lineNumber(at location: Int, cache: inout (location: Int, line: Int)?) -> Int {
         let target = max(0, min(location, textStorage.length))
         let line: Int
-        if let cache = lineCache {
-            if target >= cache.location {
-                line = cache.line + countNewlines(in: NSRange(location: cache.location, length: target - cache.location))
+        if let known = cache {
+            if target >= known.location {
+                line = known.line + countNewlines(in: NSRange(location: known.location, length: target - known.location))
             } else {
-                line = cache.line - countNewlines(in: NSRange(location: target, length: cache.location - target))
+                line = known.line - countNewlines(in: NSRange(location: target, length: known.location - target))
             }
         } else {
             line = 1 + countNewlines(in: NSRange(location: 0, length: target))
         }
-        lineCache = (location: target, line: line)
+        cache = (location: target, line: line)
         return line
     }
 
@@ -1171,15 +1223,27 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         if let cache = lineCache, affectedCharRange.location < cache.location {
             lineCache = nil
         }
+        if let cache = rulerLineCache, affectedCharRange.location < cache.location {
+            rulerLineCache = nil
+        }
+        // 全体の行数は、変わる分の改行だけ数えて足し引きする（1 字打つたびに全部数え直さない）
+        if let total = totalLinesCache, let replacement = replacementString {
+            let removed = countNewlines(in: affectedCharRange)
+            let added = replacement.utf16.reduce(0) { $0 + ($1 == 10 ? 1 : 0) }
+            totalLinesCache = total - removed + added
+        } else {
+            totalLinesCache = nil
+        }
         return true
     }
 
     func textDidChange(_ notification: Notification) {
-        totalLinesCache = nil
         characterCountCache = nil
         textView.invalidateEndOfText()
         if let undoManager = textView.undoManager, undoManager.isUndoing || undoManager.isRedoing {
             lineCache = nil
+            rulerLineCache = nil
+            totalLinesCache = nil   // 元に戻すは shouldChangeTextIn を通らんことがあるので数え直す
             // 元に戻すと、そのときの色や大きさ（テーマやズームを変える前）まで戻ってくるので、今のに揃え直す
             textStorage.beginEditing()
             textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))

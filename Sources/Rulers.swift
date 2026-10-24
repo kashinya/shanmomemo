@@ -19,7 +19,8 @@ protocol RulerSource: AnyObject {
     var totalLineCount: Int { get }
     /// カーソルの左端の x（本文の View の座標）
     var caretX: CGFloat? { get }
-    func lineNumber(at location: Int) -> Int
+    /// 行番号のルーラー用（カーソルの行の数え直しと取り合いにならんよう、別に覚えておく）
+    func rulerLineNumber(at location: Int) -> Int
 }
 
 private extension RulerSource {
@@ -71,8 +72,7 @@ final class LineNumberRuler: NSRulerView {
         let style = source.rulerStyle
         switch style {
         case .mac:
-            source.rulerBackground.setFill()
-            bounds.fill()
+            // 地の色は後ろの EditorBackgroundView が塗ってる（重ねると半透明のとき帯だけ濃くなる）ので、薄く色を足すだけ
             source.rulerText.withAlphaComponent(0.05).setFill()
             bounds.fill()
             NSColor.separatorColor.setFill()
@@ -85,8 +85,7 @@ final class LineNumberRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: bounds.maxX - 1, y: dirtyRect.minY, width: 1, height: dirtyRect.height).fill()
         case .sedit:
-            source.rulerBackground.setFill()
-            bounds.fill()
+            break   // 地は後ろの EditorBackgroundView（黒）
         }
 
         guard let textView = clientView as? NSTextView, let layoutManager = textView.layoutManager,
@@ -129,7 +128,7 @@ final class LineNumberRuler: NSRulerView {
             guard fragmentRange.length > 0 else { break }
             let character = layoutManager.characterIndexForGlyph(at: fragmentRange.location)
             if character == 0 || string.character(at: character - 1) == 10 {
-                let value = number.map { $0 + 1 } ?? source.lineNumber(at: character)
+                let value = number.map { $0 + 1 } ?? source.rulerLineNumber(at: character)
                 number = value
                 drawNumber(value, fragment: fragment)
             }
@@ -178,8 +177,7 @@ final class ColumnRuler: NSRulerView {
         let style = source.rulerStyle
         switch style {
         case .mac:
-            source.rulerBackground.setFill()
-            bounds.fill()
+            // 地の色は後ろの EditorBackgroundView が塗ってる（重ねると半透明のとき帯だけ濃くなる）ので、薄く色を足すだけ
             source.rulerText.withAlphaComponent(0.05).setFill()
             bounds.fill()
             NSColor.separatorColor.setFill()
@@ -192,8 +190,7 @@ final class ColumnRuler: NSRulerView {
             Classic.highlight.setFill()
             NSRect(x: dirtyRect.minX, y: bounds.maxY - 1, width: dirtyRect.width, height: 1).fill()
         case .sedit:
-            source.rulerBackground.setFill()
-            bounds.fill()
+            break   // 地は後ろの EditorBackgroundView（黒）
         }
 
         guard let textView = clientView as? NSTextView, let container = textView.textContainer else { return }
@@ -204,7 +201,14 @@ final class ColumnRuler: NSRulerView {
         let x0 = convert(NSPoint(x: textStart, y: 0), from: textView).x
         let first = max(0, Int(((dirtyRect.minX - x0) / cell).rounded(.down)))
         let last = max(first, Int(((dirtyRect.maxX - x0) / cell).rounded(.up)))
-        let caretColumn: Int? = source.caretX.map { Int(((convert(NSPoint(x: $0, y: 0), from: textView).x - x0) / cell).rounded(.down)) }
+        // カーソルはちょうど桁の境目にあるので、割り算の誤差で 1 つ手前にならんよう少し足す
+        let caretColumn: Int? = source.caretX.map { Int(((convert(NSPoint(x: $0, y: 0), from: textView).x - x0) / cell + 0.01).rounded(.down)) }
+
+        // 横にスクロールしたとき、行番号の上に目盛りが出んよう、本文の左端から右だけに描く
+        if let scrollView = scrollView {
+            let clipLeft = convert(scrollView.contentView.frame.origin, from: scrollView).x
+            NSBezierPath(rect: NSRect(x: clipLeft, y: bounds.minY, width: max(0, bounds.maxX - clipLeft), height: bounds.height)).addClip()
+        }
 
         // カーソルのある桁
         if let column = caretColumn, column >= 0 {
