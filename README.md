@@ -17,6 +17,9 @@ cd Memocho                  # この zip を展開したフォルダ
 ```
 
 `./build.sh` だけなら `build/メモ帳.app` ができるだけ（好きな場所に置けばいい）。
+関数名などの記号はビルドのとき落として、実行ファイルを 3 割ほど小さくしてる（動きは同じ）。残したいときは `NO_STRIP=1 ./build.sh`。
+速さより大きさを優先した最適化にするなら `SWIFT_OPT=-Osize ./build.sh`（ふつうは -O）。
+
 SHANMO のロゴ（アイコンとステータスバー）が要らんときは `NO_SHANMO_LOGO=1 ./build.sh install`。アイコンは元の紙だけのになる（Dock や Finder が前のアイコンを覚えてて、すぐ変わらんことがある）。
 Intel Mac と Apple シリコンの両方で動くユニバーサル版になる。macOS 10.15 以降（Apple シリコンは 11 以降）。
 

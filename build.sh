@@ -3,6 +3,8 @@
 #   ./build.sh           … build/メモ帳.app を作る
 #   ./build.sh install   … 作ったあと /Applications にコピー
 #   NO_SHANMO_LOGO=1 ./build.sh … SHANMO のロゴなし（アイコンは元の紙だけ、ステータスバーにも出さない）
+#   SWIFT_OPT=-Osize ./build.sh … 速さより大きさ優先で最適化（ふつうは -O）
+#   NO_STRIP=1 ./build.sh       … 関数名などの記号を残す（ふつうは落として 3 割小さくする）
 # 要るもの: Xcode のコマンドラインツール（xcode-select --install）
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -14,6 +16,11 @@ VERSION="1.0"
 MIN_ARM64="11.0"
 MIN_X86_64="10.15"
 ARCHS="${ARCHS:-arm64 x86_64}"
+SWIFT_OPT="${SWIFT_OPT:--O}"
+case "$SWIFT_OPT" in
+  -O|-Osize) ;;
+  *) echo "SWIFT_OPT は -O か -Osize: $SWIFT_OPT" >&2; exit 1 ;;
+esac
 BUILD_DIR="build"
 APP="$BUILD_DIR/$APP_NAME.app"
 
@@ -37,13 +44,20 @@ for ARCH in $ARCHS; do
     x86_64) MIN="$MIN_X86_64" ;;
     *) echo "対応してないアーキテクチャ: $ARCH" >&2; exit 1 ;;
   esac
-  echo "==> $ARCH 向けにコンパイル中（macOS $MIN 以降）…"
-  "$SWIFTC" -O -whole-module-optimization -swift-version 5 \
+  echo "==> $ARCH 向けにコンパイル中（macOS $MIN 以降、$SWIFT_OPT）…"
+  "$SWIFTC" "$SWIFT_OPT" -whole-module-optimization -swift-version 5 \
     -sdk "$SDK" -target "$ARCH-apple-macos$MIN" \
     -module-name "$EXEC_NAME" \
     -o "$BUILD_DIR/obj/$EXEC_NAME-$ARCH" \
     Sources/*.swift
-  BINARIES+=("$BUILD_DIR/obj/$EXEC_NAME-$ARCH")
+  if [ -n "${NO_STRIP:-}" ]; then
+    BINARIES+=("$BUILD_DIR/obj/$EXEC_NAME-$ARCH")
+  else
+    # 中だけで使う関数名などの記号（1 アーキテクチャで 220KB ほど）を落とす。動きは変わらん。
+    # 落とす前のは build/obj/ に残すので、落ちたときのレポートを読むならそっちを使う
+    xcrun strip -x -o "$BUILD_DIR/obj/$EXEC_NAME-$ARCH.stripped" "$BUILD_DIR/obj/$EXEC_NAME-$ARCH"
+    BINARIES+=("$BUILD_DIR/obj/$EXEC_NAME-$ARCH.stripped")
+  fi
 done
 
 lipo -create -output "$APP/Contents/MacOS/$EXEC_NAME" "${BINARIES[@]}"

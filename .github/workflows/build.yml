@@ -74,6 +74,21 @@ jobs:
           xcrun swiftc -O -o "$RUNNER_TEMP/launch-time" tools/launch-time.swift
           "$RUNNER_TEMP/launch-time" "$APP" 6
 
+      # 大きさ優先の最適化（-Osize）にしたらどれだけ小さくなるか（参考、アップロードせん）
+      - name: Size with -Osize (reference)
+        continue-on-error: true
+        env:
+          NO_PC98_FONT: "1"
+          SWIFT_OPT: "-Osize"
+        run: |
+          set -o pipefail
+          ./build.sh > /dev/null
+          for ARCH in arm64 x86_64; do
+            lipo -thin "$ARCH" -output "$RUNNER_TEMP/Memocho-Osize-$ARCH" "build/メモ帳.app/Contents/MacOS/Memocho"
+            echo "-Osize $ARCH: $(stat -f %z "$RUNNER_TEMP/Memocho-Osize-$ARCH") B"
+          done
+          "$RUNNER_TEMP/launch-time" "build/メモ帳.app" 6
+
       # ロゴなしのビルド（こっちもアップロードせん）
       - name: Build without SHANMO logo (arm64 only)
         env:
