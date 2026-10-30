@@ -183,7 +183,7 @@ PLIST
 plutil -lint "$APP/Contents/Info.plist" >/dev/null
 codesign --force --sign - "$APP"
 echo "$BUILD_NUMBER" > "$BUILD_NUMBER_FILE"   # できたときだけ数える
-echo "==> できた: $APP（Ver $VERSION）"
+echo "==> できた: ${APP}（Ver ${VERSION}）"
 
 if [ "${1:-}" = "install" ]; then
   DEST="/Applications/$APP_NAME.app"

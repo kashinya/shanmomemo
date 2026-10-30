@@ -16,7 +16,7 @@ enum Sedit {
     static let rowHeight: CGFloat = 16
     static let cellWidth: CGFloat = 8
     /// 本文のまわりのすき間（Mac のときの 6pt＝4pt＋余白 2pt より少し狭く、半角の半分）。
-    /// 行番号を出してないときの左と、上の行の下・ファンクションキーの欄の上に取る
+    /// 行番号を出してないときの左と、ファンクションキーの欄の上に取る（上の行の下は PC-98 と同じくあけない）
     static let editorMargin: CGFloat = 4
 
     private static var fontCache: [CGFloat: NSFont] = [:]

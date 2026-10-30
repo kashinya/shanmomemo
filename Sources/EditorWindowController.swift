@@ -600,12 +600,12 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             functionBar.frame = NSRect(x: area.minX, y: max(area.minY, area.maxY - row), width: area.width, height: row)
             return NSRect(x: area.minX, y: area.minY + row, width: area.width, height: max(0, area.height - row * 2))
         }
-        /// 本文の欄から、スクロールする部分を取る。SEDIT 風は上の行の下とファンクションキーの欄の上に同じだけすき間をあける
-        /// （本文の背景はすき間にも敷くので、テーマの色・半透明・背景画像はそのままつながる）
+        /// 本文の欄から、スクロールする部分を取る。SEDIT 風はファンクションキーの欄の上にすき間をあける。
+        /// 上の行の下は PC-98 の SEDIT と同じくあけない（半角の字は 16 ドットの升の上 3 ドットが空いてるので、それがすき間に見える）。
+        /// 本文の背景はすき間にも敷くので、テーマの色・半透明・背景画像はそのままつながる
         func scrollFrame(in text: NSRect) -> NSRect {
             guard sedit else { return text }
-            let margin = Sedit.editorMargin
-            return NSRect(x: text.minX, y: text.minY + margin, width: text.width, height: max(0, text.height - margin * 2))
+            return NSRect(x: text.minX, y: text.minY, width: text.width, height: max(0, text.height - Sedit.editorMargin))
         }
 
         guard Settings.shared.classicUI else {
