@@ -159,6 +159,23 @@ jobs:
           path: ${{ runner.temp }}/screenshots
           if-no-files-found: warn
 
+      # ./build.sh install both: 2 つとも同じバージョンで、ID がちがって、/Applications に並んで入るか
+      - name: Build and install both (arm64 only)
+        env:
+          ARCHS: arm64
+          NO_PC98_FONT: "1"
+        run: |
+          set -o pipefail
+          ./build.sh install both 2>&1 | tee build.log
+          for NAME in "Shanmoメモ帳" "SEDITメモ"; do
+            PLIST="/Applications/$NAME.app/Contents/Info.plist"
+            echo "$NAME: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST") $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
+          done
+          A="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "/Applications/Shanmoメモ帳.app/Contents/Info.plist")"
+          B="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "/Applications/SEDITメモ.app/Contents/Info.plist")"
+          [ "$A" = "$B" ] || { echo "::error::バージョンがそろってない: $A / $B" >&2; exit 1; }
+          rm -rf "/Applications/Shanmoメモ帳.app" "/Applications/SEDITメモ.app"
+
       - name: Post compiler errors to PR
         if: failure() && github.event_name == 'pull_request'
         env:
