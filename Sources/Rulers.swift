@@ -278,12 +278,27 @@ final class ColumnRuler: NSRulerView {
 /// クリップビューをルーラーの外に置き直して、字がルーラーの下に入らんようにする（SEDIT 風はルーラーを透かして背景を見せる）
 final class EditorScrollView: NSScrollView {
     private var isRetiling = false
+    private var retileRequested = false
 
     override func tile() {
-        super.tile()
-        guard !isRetiling else { return }
+        // 並べ直してる最中に（中で変えた大きさがきっかけで）また呼ばれたら、そこでは何もせず、終わってからもう 1 回並べ直す。
+        // 中でそのまま super.tile() すると、クリップビューをルーラーの下まで広げ直されて、こっちが狭めてはまた広げられる
+        guard !isRetiling else {
+            retileRequested = true
+            return
+        }
         isRetiling = true
         defer { isRetiling = false }
+        var passes = 0
+        repeat {
+            retileRequested = false
+            super.tile()
+            keepClipViewOutsideRulers()
+            passes += 1
+        } while retileRequested && passes < 3
+    }
+
+    private func keepClipViewOutsideRulers() {
         var frame = contentView.frame
         if rulersVisible, hasVerticalRuler, let ruler = verticalRulerView, !ruler.isHidden, ruler.frame.maxX > frame.minX {
             frame.size.width = max(0, frame.maxX - ruler.frame.maxX)
@@ -295,19 +310,27 @@ final class EditorScrollView: NSScrollView {
         }
         let insets = contentView.contentInsets
         let hasInsets = insets.top != 0 || insets.left != 0 || insets.bottom != 0 || insets.right != 0
-        guard frame != contentView.frame || hasInsets else { return }
-        if hasInsets {
-            // ルーラーのぶんは、ずらすんやなくてクリップビューを小さくして空ける
-            automaticallyAdjustsContentInsets = false
-            contentInsets = NSEdgeInsets()
-            contentView.contentInsets = NSEdgeInsets()
+        if frame != contentView.frame || hasInsets {
+            if hasInsets {
+                // ルーラーのぶんは、ずらすんやなくてクリップビューを小さくして空ける
+                automaticallyAdjustsContentInsets = false
+                contentInsets = NSEdgeInsets()
+                contentView.contentInsets = NSEdgeInsets()
+            }
+            contentView.frame = frame
+            // スクロールの位置を、余白なしで動ける範囲に収め直す
+            let constrained = contentView.constrainBoundsRect(contentView.bounds)
+            if constrained.origin != contentView.bounds.origin {
+                contentView.scroll(to: constrained.origin)
+            }
+            reflectScrolledClipView(contentView)
         }
-        contentView.frame = frame
-        // スクロールの位置を、余白なしで動ける範囲に収め直す
-        let constrained = contentView.constrainBoundsRect(contentView.bounds)
-        if constrained.origin != contentView.bounds.origin {
-            contentView.scroll(to: constrained.origin)
+        // 折り返す本文（横に伸びん NSTextView）は、幅をクリップビューにきっちり合わせる。自動の伸び縮みに任せると、
+        // AppKit がルーラーのぶん狭めたあとでクリップビューも狭めるので、ルーラーの幅を二重に引いてた
+        // （CI で測った: 見えてる幅 468 に本文 436。SEDIT 風は右が 24pt 切れ、Mac の見た目は右が余ってた）
+        if let textView = documentView as? NSTextView, !textView.isHorizontallyResizable,
+           textView.frame.width != contentView.bounds.width {
+            textView.setFrameSize(NSSize(width: contentView.bounds.width, height: textView.frame.height))
         }
-        reflectScrolledClipView(contentView)
     }
 }
