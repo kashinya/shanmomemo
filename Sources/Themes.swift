@@ -57,7 +57,7 @@ struct EditorTheme {
     }
 }
 
-/// 本文の後ろにうっすら出す画像。~/Library/Application Support/local.memocho/BackgroundImage に写しを置く
+/// 本文の後ろにうっすら出す画像。~/Library/Application Support/local.memocho.sedit/BackgroundImage に写しを置く
 enum BackgroundImage {
     private static var cache: NSImage?
     private static var loaded = false

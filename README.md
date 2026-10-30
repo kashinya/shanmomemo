@@ -1,4 +1,4 @@
-# Shanmoメモ帳（SEDITメモ）for Mac
+# SEDITメモ帳 for Mac
 
 Windows 95〜10 のメモ帳みたいな、ただのテキストエディタ。
 ［表示］→［SEDIT 風］で、PC-98（PC-9801）の MS-DOS 5 に付いてた SEDIT みたいな画面にもなる。
@@ -41,38 +41,26 @@ Xcode 本体は要らない。コマンドラインツールだけでいい。
 xcode-select --install      # 入れてなければ。入ってたら「already installed」と出る
 git clone https://github.com/kashinya/shanmomemo.git
 cd shanmomemo
-./build.sh install          # ビルドして /Applications/Shanmoメモ帳.app に入れる
+./build.sh install          # ビルドして /Applications/SEDITメモ帳.app に入れる
 ```
 
 2 回目からは `git pull && ./build.sh install`。
 
-`./build.sh` だけなら `build/Shanmoメモ帳.app` ができるだけ（好きな場所に置けばいい）。
+`./build.sh` だけなら `build/SEDITメモ帳.app` ができるだけ（好きな場所に置けばいい）。
 `install` は、前の名前（メモ帳.app など）で入れてた同じアプリ（同じ ID）を消してから入れる（2 つあると .txt の関連付けが迷うので）。
 
 バージョンはビルドするたびに 0.01 ずつ上がる（Ver 1.01、1.02、… 1.99、2.00）。数えた回数はリポジトリの `.build-number`（git には入れない）。
-［Shanmoメモ帳について］と、Finder の「情報を見る」に出る。
+［SEDITメモ帳について］と、Finder の「情報を見る」に出る。
 関数名などの記号はビルドのとき落として、実行ファイルを 3 割ほど小さくしてる（動きは同じ）。残したいときは `NO_STRIP=1 ./build.sh`。
 速さより大きさを優先した最適化にするなら `SWIFT_OPT=-Osize ./build.sh`（ふつうは -O）。
 
-SHANMO なしにするときは `NO_SHANMO_LOGO=1 ./build.sh install`。
-
-| | ふつう | `NO_SHANMO_LOGO=1` |
-|---|---|---|
-| 名前 | Shanmoメモ帳 | SEDITメモ |
-| アイコン | 紙に SHANMO CORPORATION のロゴ | 元の紙だけ |
-| ステータスバーの左はじ | SHANMO のロゴ | なし |
-| 説明（アプリについて・情報を見る） | Copyright (c) 2026 Shanmo Corp | SEDITモード搭載なつかしテキストエディタ |
-| ID（設定の置き場所） | `local.memocho` | `local.memocho.sedit` |
-
-ID がちがうので、2 つ並べて入れられる（設定は別々）。両方いっぺんに作るなら `./build.sh both`、両方入れるなら `./build.sh install both`（バージョンは同じになる）。
-Dock や Finder が前のアイコンを覚えてて、すぐ変わらんことがある。
 Intel Mac と Apple シリコンの両方で動くユニバーサル版になる。macOS 10.15 以降（Apple シリコンは 11 以降）。
 
 自分の Mac でビルドしたアプリなので、Gatekeeper の「開発元を確認できません」は出ない。
 
 ### .txt をダブルクリックでこれが開くようにする
 
-Finder で .txt ファイルを選んで ⌘I →「このアプリケーションで開く」で「Shanmoメモ帳」（SEDITメモ）を選んで「すべてを変更…」。
+Finder で .txt ファイルを選んで ⌘I →「このアプリケーションで開く」で「SEDITメモ帳」を選んで「すべてを変更…」。
 .php や .csv も同じ要領でいける。どのファイルでも「このアプリケーションで開く」の候補には出る。
 
 ## Windows のメモ帳との対応
@@ -100,7 +88,7 @@ Finder で .txt ファイルを選んで ⌘I →「このアプリケーショ�
 | — | 表示 > 行番号 / 桁ルーラー | 本文の左に行番号、上に MIFES みたいな桁ルーラー（下の「行番号と桁ルーラー」） |
 | — | マクロ | キーボードマクロ（下の「キーボードマクロ」） |
 | — | 編集 > ファイルを挿入… | 選んだファイルの中身をカーソルの位置に入れる（文字コードは自動判定か指定） |
-| 表示 > ステータス バー | 同じ | 行・列、ズーム、改行コード、文字コードを表示。左はじに SHANMO のロゴ（本文 500pt 幅でも入る。それより狭いと隠れる。`NO_SHANMO_LOGO=1` でビルドすると出ない） |
+| 表示 > ステータス バー | 同じ | 行・列、ズーム、改行コード、文字コードを表示 |
 | 設定 > アプリのテーマ | 表示 > テーマ | システム設定に合わせる / ライト / ダーク / Panic Light / Panic Dark / Panic Palette / Neon（下の「テーマ」） |
 | ファイルをウィンドウにドロップ | 同じ | 今のウィンドウで開く |
 
@@ -145,7 +133,7 @@ Mac 全体にはインストールされない。このアプリの中だけで�
 ［表示］→［テーマ］→［テーマの設定…］で:
 
 - 背景の不透明度（20%〜100%）: 100% 未満にすると、本文の後ろにデスクトップが透ける
-- 背景の画像: 「選ぶ…」か、枠にドラッグ・貼り付け。本文の後ろにうっすら出る（縦横比はそのままで敷き詰め。スクロールしても画像は動かない）。画像は `~/Library/Application Support/local.memocho/BackgroundImage` に写しを置く
+- 背景の画像: 「選ぶ…」か、枠にドラッグ・貼り付け。本文の後ろにうっすら出る（縦横比はそのままで敷き詰め。スクロールしても画像は動かない）。画像は `~/Library/Application Support/local.memocho.sedit/BackgroundImage` に写しを置く
 - 画像の濃さ（0%〜80%、初期値 15%）
 
 テーマ・不透明度・画像は Windows 2000 風のときも本文に効く（まわりの灰色の部品は Windows 2000 のまま）。
@@ -214,40 +202,36 @@ Mac のまま残るもの: メニューを開いたときの一覧、開く・�
 
 ## 落ちたとき
 
-保存してない文書の中身は、15 秒ごとに（変わってたら）`~/Library/Application Support/local.memocho/Recovery/` に控えを書いておく。
+保存してない文書の中身は、15 秒ごとに（変わってたら）`~/Library/Application Support/local.memocho.sedit/Recovery/` に控えを書いておく。
 
 - ふつうに閉じた・終わったとき（「保存しない」を選んだときも）は、控えを消す
 - 落ちた・強制終了した・電源が切れたあと、次に起動したら、控えの中身でウィンドウを開き直す。保存してない状態（タイトルに *）で、元のファイルがあればそこに上書き保存できる
 - 最後の控えから落ちるまでの 15 秒ぶんは戻らないことがある
 
-ここから下の `local.memocho` は、SEDITメモなら `local.memocho.sedit` に読みかえる（ファイルの置き場所の名前も同じ）。
-
 隠し設定: タブ幅（初期値は Windows と同じ 8）
 
 ```sh
-defaults write local.memocho TabWidth -int 4
+defaults write local.memocho.sedit TabWidth -int 4
 ```
 
-隠し設定: 変換候補の窓の位置を調べる記録（IME とのやりとりを `~/Library/Logs/local.memocho-ime.log` に書く。調べ終わったら消す）
+隠し設定: 変換候補の窓の位置を調べる記録（IME とのやりとりを `~/Library/Logs/local.memocho.sedit-ime.log` に書く。調べ終わったら消す）
 
 ```sh
-defaults write local.memocho IMELog -bool YES    # 記録する（アプリを開き直すと効く）
-defaults delete local.memocho IMELog             # やめる
+defaults write local.memocho.sedit IMELog -bool YES    # 記録する（アプリを開き直すと効く）
+defaults delete local.memocho.sedit IMELog             # やめる
 ```
 
 設定をまっさらに戻す / アンインストール:
 
 ```sh
-defaults delete local.memocho
 defaults delete local.memocho.sedit
-rm -rf "/Applications/Shanmoメモ帳.app" "/Applications/SEDITメモ.app"
+rm -rf "/Applications/SEDITメモ帳.app"
 ```
 
 ## 中身
 
 - `Sources/` … Swift（AppKit）。Xcode プロジェクトなし、`build.sh` が swiftc を直接呼ぶ
-- `Resources/AppIcon.icns` … アイコン（SHANMO のロゴ入り）。`AppIcon-plain.icns` はロゴなし（`NO_SHANMO_LOGO=1` のとき）
+- `Resources/AppIcon.icns` … アイコン
 - `docs/` … README の画面写真（CI で、PC-9800 フォント込みのビルドを動かして撮る）
 - `tools/` … CI 用（起動の速さを測る・画面写真の見本の文）
-- `Resources/StatusLogo.png` … ステータスバーのロゴ
 - アプリ名を変えたいとき: `APP_NAME=Notepad ./build.sh`

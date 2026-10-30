@@ -34,7 +34,8 @@ jobs:
         run: |
           APP="$(ls -d build/*.app)"
           echo "$APP"
-          [ "$(basename "$APP")" = "Shanmoメモ帳.app" ] || { echo "::error::名前が Shanmoメモ帳 になってない: $APP" >&2; exit 1; }
+          [ "$(basename "$APP")" = "SEDITメモ帳.app" ] || { echo "::error::名前が SEDITメモ帳 になってない: $APP" >&2; exit 1; }
+          if [ -e "$APP/Contents/Resources/StatusLogo.png" ]; then echo "::error::ふつうのビルドに StatusLogo.png が入ってる" >&2; exit 1; fi
           ARCHS_FOUND="$(lipo -archs "$APP/Contents/MacOS/Memocho")"
           echo "$ARCHS_FOUND"
           for ARCH in arm64 x86_64; do
@@ -46,10 +47,8 @@ jobs:
 
       - name: Check icon
         run: |
-          for ICON in AppIcon AppIcon-plain; do
-            iconutil --convert iconset --output "$RUNNER_TEMP/$ICON.iconset" "Resources/$ICON.icns"
-            ls "$RUNNER_TEMP/$ICON.iconset"
-          done
+          iconutil --convert iconset --output "$RUNNER_TEMP/AppIcon.iconset" Resources/AppIcon.icns
+          ls "$RUNNER_TEMP/AppIcon.iconset"
 
       - name: Zip app
         if: success()
@@ -78,11 +77,11 @@ jobs:
           xcrun swiftc -O -o "$RUNNER_TEMP/launch-time" tools/launch-time.swift
           "$RUNNER_TEMP/launch-time" "$APP" 6
           # SEDIT 風 + 行番号 + 桁ルーラーのときの、ルーラーと本文の並び方
-          defaults write local.memocho SeditMode -bool YES
-          defaults write local.memocho ShowLineNumbers -bool YES
-          defaults write local.memocho ShowColumnRuler -bool YES
+          defaults write local.memocho.sedit SeditMode -bool YES
+          defaults write local.memocho.sedit ShowLineNumbers -bool YES
+          defaults write local.memocho.sedit ShowColumnRuler -bool YES
           MEMOCHO_PROBE_GEOMETRY=1 "$RUNNER_TEMP/launch-time" "$APP" 1 || true
-          defaults delete local.memocho || true
+          defaults delete local.memocho.sedit || true
 
       # 大きさ優先の最適化（-Osize）にしたらどれだけ小さくなるか（参考、アップロードせん）
       - name: Size with -Osize (reference)
@@ -99,22 +98,28 @@ jobs:
           done
           "$RUNNER_TEMP/launch-time" "$(ls -d build/*.app)" 6
 
-      # ロゴなしのビルド（こっちもアップロードせん）
-      - name: Build without SHANMO logo (arm64 only)
+      # 手元だけの見た目（PRIVATE=1、Resources/Private/）で作れるか。中身は CI だけの仮のもの（アップロードせん）
+      - name: Build with a private look (arm64 only)
         env:
           ARCHS: arm64
           NO_PC98_FONT: "1"
-          NO_SHANMO_LOGO: "1"
+          PRIVATE: "1"
         run: |
           set -o pipefail
+          mkdir -p Resources/Private
+          printf 'BRAND_NAME="CIテスト"\nBRAND_DESCRIPTION="CI test & <escape>"\nBRAND_BUNDLE_ID="local.memocho.citest"\n' > Resources/Private/brand.sh
+          cp docs/sedit.png Resources/Private/StatusLogo.png
+          # アイコンの差し替えも確かめる（中身はふつうのを 1 バイト変えたもの）
+          python3 -c 'import sys; d=bytearray(open("Resources/AppIcon.icns","rb").read()); d[-1]^=1; open("Resources/Private/AppIcon.icns","wb").write(d)'
           ./build.sh 2>&1 | tee build.log
-          APP="$(ls -d build/*.app)"
-          [ "$(basename "$APP")" = "SEDITメモ.app" ] || { echo "::error::ロゴなしやのに名前が SEDITメモ になってない: $APP" >&2; exit 1; }
-          /usr/libexec/PlistBuddy -c 'Print :NSHumanReadableCopyright' "$APP/Contents/Info.plist"
-          RES="$APP/Contents/Resources"
-          if [ -e "$RES/StatusLogo.png" ]; then echo "::error::ロゴなしやのに StatusLogo.png が入ってる" >&2; exit 1; fi
-          cmp "$RES/AppIcon.icns" Resources/AppIcon-plain.icns
-          codesign --verify --strict --verbose=1 "$(ls -d build/*.app)"
+          APP="build/CIテスト.app"
+          cmp "$APP/Contents/Resources/AppIcon.icns" Resources/Private/AppIcon.icns
+          [ -d "$APP" ] || { echo "::error::PRIVATE=1 で名前が brand.sh のになってない" >&2; ls build; exit 1; }
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "local.memocho.citest" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :NSHumanReadableCopyright' "$APP/Contents/Info.plist")" = "CI test & <escape>" ]
+          [ -f "$APP/Contents/Resources/StatusLogo.png" ] || { echo "::error::StatusLogo.png が入ってない" >&2; exit 1; }
+          codesign --verify --strict --verbose=1 "$APP"
+          rm -rf Resources/Private
 
       # フォントを落として埋め込む流れと、埋め込んだあとの署名が通るか（こっちはアップロードせん）
       - name: Build with PC-9800 font (arm64 only)
@@ -141,8 +146,8 @@ jobs:
           cp tools/screenshot/MEMO.TXT tools/screenshot/README.TXT tools/screenshot/LONG.TXT ~/Desktop/
           shoot() {
             NAME="$1"; TEXT="$2"; SIZE="$3"; shift 3
-            defaults delete local.memocho >/dev/null 2>&1 || true
-            for SETTING in "$@"; do defaults write local.memocho $SETTING; done
+            defaults delete local.memocho.sedit >/dev/null 2>&1 || true
+            for SETTING in "$@"; do defaults write local.memocho.sedit $SETTING; done
             perl -e 'alarm shift; exec @ARGV' 20 open -W -n -F --env MEMOCHO_LAUNCH_PROBE=1 \
               --env "MEMOCHO_SCREENSHOT=$OUT/$NAME.png" --env "MEMOCHO_SCREENSHOT_TEXT=$TEXT" \
               --env "MEMOCHO_SCREENSHOT_SIZE=$SIZE" --env MEMOCHO_PROBE_GEOMETRY=1 \
@@ -163,7 +168,7 @@ jobs:
             TEXT="$(grep -o 'textView.frame ([^)]*)' "$OUT/$NAME.log" | awk -F'[(), ]+' '{print $4}')"
             if [ "$CLIP" = "$TEXT" ]; then echo "$NAME: 本文の幅 $TEXT = 見えてる幅 $CLIP"; else echo "::error::$NAME: 本文の幅 $TEXT と見えてる幅 $CLIP がちがう"; fi
           done
-          defaults delete local.memocho >/dev/null 2>&1 || true
+          defaults delete local.memocho.sedit >/dev/null 2>&1 || true
 
       - uses: actions/upload-artifact@v4
         with:
@@ -171,22 +176,24 @@ jobs:
           path: ${{ runner.temp }}/screenshots
           if-no-files-found: warn
 
-      # ./build.sh install both: 2 つとも同じバージョンで、ID がちがって、/Applications に並んで入るか
+      # ./build.sh install both: ふつうのと手元だけの見た目のが、同じバージョン・別の ID で /Applications に並んで入るか
       - name: Build and install both (arm64 only)
         env:
           ARCHS: arm64
           NO_PC98_FONT: "1"
         run: |
           set -o pipefail
+          mkdir -p Resources/Private
+          printf 'BRAND_NAME="CIテスト"\nBRAND_DESCRIPTION="CI test"\nBRAND_BUNDLE_ID="local.memocho.citest"\n' > Resources/Private/brand.sh
           ./build.sh install both 2>&1 | tee build.log
-          for NAME in "Shanmoメモ帳" "SEDITメモ"; do
+          for NAME in "SEDITメモ帳" "CIテスト"; do
             PLIST="/Applications/$NAME.app/Contents/Info.plist"
             echo "$NAME: $(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST") $(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$PLIST")"
           done
-          A="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "/Applications/Shanmoメモ帳.app/Contents/Info.plist")"
-          B="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "/Applications/SEDITメモ.app/Contents/Info.plist")"
+          A="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "/Applications/SEDITメモ帳.app/Contents/Info.plist")"
+          B="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "/Applications/CIテスト.app/Contents/Info.plist")"
           [ "$A" = "$B" ] || { echo "::error::バージョンがそろってない: $A / $B" >&2; exit 1; }
-          rm -rf "/Applications/Shanmoメモ帳.app" "/Applications/SEDITメモ.app"
+          rm -rf "/Applications/SEDITメモ帳.app" "/Applications/CIテスト.app" Resources/Private
 
       - name: Post compiler errors to PR
         if: failure() && github.event_name == 'pull_request'

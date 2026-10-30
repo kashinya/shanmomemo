@@ -452,7 +452,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
-    /// 名前・バージョン・説明（Info.plist の NSHumanReadableCopyright。build.sh が SHANMO ありなしで変える）
+    /// 名前・バージョン・説明（Info.plist の NSHumanReadableCopyright。build.sh が入れる）
     @objc func showAbout(_ sender: Any?) {
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: AppInfo.name,
