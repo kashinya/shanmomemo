@@ -1,7 +1,7 @@
 import AppKit
 
-/// 1 ウィンドウ = 1 文書。タブなし、自動保存なし、自動復元なし。
-final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation {
+/// 1 ウィンドウ = 1 文書。タブなし、自動保存なし、自動復元なし（落ちたときの控えから戻すのだけはある）。
+final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate, NSMenuItemValidation, RulerSource {
 
     static let minZoom = 10
     static let maxZoom = 500
@@ -9,12 +9,37 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private static let completeSelector = NSSelectorFromString("complete:")
     private static let cancelSelector = NSSelectorFromString("cancelOperation:")
 
-    let window: NSWindow
+    let window: EditorWindow
     let textView: EditorTextView
     private let scrollView: NSScrollView
     private let statusBar: StatusBarView
+    private let rootView = EditorRootView()
+    private let backgroundView = EditorBackgroundView()
+    // SEDIT 風のときだけ出す部品
+    private let seditLine = SeditStatusLine()
+    private let functionBar = SeditFunctionBar()
+    private var totalLinesCache: Int?
+    private var characterCountCache: Int?
+    // ［表示］→［行番号］［桁ルーラー］
+    private lazy var lineRuler: LineNumberRuler = {
+        let ruler = LineNumberRuler(scrollView: scrollView)
+        ruler.source = self
+        ruler.clientView = textView
+        return ruler
+    }()
+    private lazy var columnRuler: ColumnRuler = {
+        let ruler = ColumnRuler(scrollView: scrollView)
+        ruler.source = self
+        ruler.clientView = textView
+        return ruler
+    }()
+    // Windows 2000 風のときだけ出す部品
+    private let titleBar = ClassicTitleBar()
+    private let menuBar = ClassicMenuBar()
+    private let verticalBar = ClassicScrollBar(orientation: .vertical)
+    private let horizontalBar = ClassicScrollBar(orientation: .horizontal)
     private let textStorage: NSTextStorage
-    private let layoutManager: NSLayoutManager
+    private let layoutManager: EditorLayoutManager
     private let textContainer: NSTextContainer
     private let lineHeightDelegate = FixedLineHeightDelegate()
 
@@ -23,30 +48,43 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private(set) var lineEnding: LineEnding = .lf
     private(set) var isDirty = false
 
-    private var zoomPercent = 100
+    /// ズーム（%）。新しいウィンドウは、最後に変えたズームで開く
+    private var zoomPercent = Settings.shared.zoomPercent
+    /// 落ちたとき用の控え（Recovery）の名前と、控えを書いたときの revision（控えが無ければ nil）
+    private var recoveryID = UUID()
+    private var recoveredRevision: Int?
+    /// 閉じたあと（AppDelegate が外すまでの間に、控えや位置を書き直さんように）
+    private var isClosed = false
+    /// 全画面のときに開いたファイルの位置と大きさ（全画面を抜けたらそこにする）
+    private var pendingRememberedFrame: NSRect?
+    /// 中身・文字コード・改行コードが変わるたびに増える
+    private var revision = 0
     private var textAttributes: [NSAttributedString.Key: Any] = [:]
     private var caretLocation = 0
     private var lineCache: (location: Int, line: Int)?
+    private var rulerLineCache: (location: Int, line: Int)?
+    private var characterCountScheduled = false
     private var statusUpdateScheduled = false
+    private var classicAfterFullScreenExit = false
 
     // MARK: - 生成
 
     override init() {
         // TextKit 1 で組む（大きいファイルと「折り返さない」表示が素直に動く）
         let storage = NSTextStorage()
-        let manager = NSLayoutManager()
+        let manager = EditorLayoutManager()
         let container = NSTextContainer(size: NSSize(width: 100, height: EditorWindowController.unlimited))
         storage.addLayoutManager(manager)
         manager.addTextContainer(container)
 
-        let contentRect = NSRect(x: 0, y: 0, width: 760, height: 520)
-        let newWindow = NSWindow(contentRect: contentRect,
-                                 styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                                 backing: .buffered,
-                                 defer: false)
+        let contentRect = NSRect(x: 0, y: 0, width: 500, height: 500)
+        let newWindow = EditorWindow(contentRect: contentRect,
+                                     styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                     backing: .buffered,
+                                     defer: false)
 
         let barHeight = StatusBarView.height
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: barHeight,
+        let scroll = EditorScrollView(frame: NSRect(x: 0, y: barHeight,
                                                 width: contentRect.width,
                                                 height: contentRect.height - barHeight))
         let editorView = EditorTextView(frame: NSRect(origin: .zero, size: scroll.contentSize),
@@ -65,8 +103,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
         setUpWindow()
         setUpTextView()
-        applyFont()
+        applyTheme()
         applyWordWrap()
+        applyClassicUI()
+        applySeditMode()
+        applyRulers()
         applyStatusBarVisibility()
         updateTitle()
     }
@@ -78,13 +119,14 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         window.minSize = NSSize(width: 360, height: 200)
         window.delegate = self
 
-        if let content = window.contentView {
-            content.autoresizesSubviews = true
-            scrollView.autoresizingMask = [.width, .height]
-            statusBar.autoresizingMask = [.width, .maxYMargin]
-            content.addSubview(scrollView)
-            content.addSubview(statusBar)
-        }
+        // 中身の並べ方は layoutContent() でまとめて決める
+        window.contentView = rootView
+        rootView.autoresizesSubviews = true
+        rootView.onLayout = { [weak self] in self?.layoutContent() }
+        rootView.addSubview(backgroundView)   // 本文の後ろ（背景色・半透明・画像）
+        rootView.addSubview(scrollView)
+        rootView.addSubview(statusBar)
+        functionBar.onPress = { [weak self] number in self?.performSeditFunction(number) }
         window.initialFirstResponder = textView
     }
 
@@ -92,9 +134,13 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
-        scrollView.drawsBackground = true
-        scrollView.backgroundColor = .textBackgroundColor
+        // 背景は後ろの backgroundView が描く（半透明と画像のため）
+        scrollView.drawsBackground = false
+        scrollView.contentView.drawsBackground = false
         scrollView.documentView = textView
+        // 本文の大きさが変わったのも拾うので、documentView を入れてから
+        verticalBar.attach(to: scrollView)
+        horizontalBar.attach(to: scrollView)
 
         textView.editor = self
         textView.delegate = self
@@ -123,13 +169,11 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         disableIfAvailable("setInlinePredictionType:", key: "inlinePredictionType", value: 1)   // macOS 14+
         disableIfAvailable("setWritingToolsBehavior:", key: "writingToolsBehavior", value: -1)  // macOS 15+
 
-        textView.drawsBackground = true
-        textView.backgroundColor = .textBackgroundColor
-        textView.insertionPointColor = .textColor
+        textView.drawsBackground = false
         textView.textContainerInset = NSSize(width: 4, height: 4)
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: EditorWindowController.unlimited, height: EditorWindowController.unlimited)
-        textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
+        textView.minSize = NSSize(width: 0, height: visibleTextSize.height)
         textContainer.lineFragmentPadding = 2
 
         layoutManager.delegate = lineHeightDelegate
@@ -140,6 +184,168 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
                                                selector: #selector(clipViewFrameDidChange(_:)),
                                                name: NSView.frameDidChangeNotification,
                                                object: scrollView.contentView)
+        // スクロールしたら行番号と桁ルーラーも描き直す
+        scrollView.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(clipViewBoundsDidChange(_:)),
+                                               name: NSView.boundsDidChangeNotification,
+                                               object: scrollView.contentView)
+        scrollView.verticalRulerView = lineRuler
+        scrollView.horizontalRulerView = columnRuler
+    }
+
+    @objc private func clipViewBoundsDidChange(_ notification: Notification) {
+        refreshRulers()
+    }
+
+    // MARK: - 行番号・桁ルーラー（RulerSource）
+
+    /// ［表示］→［行番号］［桁ルーラー］を出す／隠す
+    /// 本文のまわりの余白。SEDIT 風は上は 0、左は行番号を出してないときだけ半角 4 桁ぶん（行番号を出してるときくらい）あける
+    private func updateTextInsets() {
+        let settings = Settings.shared
+        let inset: NSSize
+        if settings.seditMode {
+            inset = NSSize(width: settings.showLineNumbers ? 0 : Sedit.editorMargin, height: 0)
+        } else {
+            inset = NSSize(width: 4, height: 4)
+        }
+        if textView.textContainerInset != inset {
+            textView.textContainerInset = inset
+        }
+        let padding: CGFloat = settings.seditMode ? 0 : 2
+        if textContainer.lineFragmentPadding != padding {
+            textContainer.lineFragmentPadding = padding
+        }
+    }
+
+    func applyRulers() {
+        let settings = Settings.shared
+        if settings.seditMode {
+            layoutContent()   // 上の行の下のすき間は、桁ルーラーを出すかどうかで変わる
+        }
+        updateTextInsets()
+        updateSeditWrapWidth()
+        scrollView.hasVerticalRuler = settings.showLineNumbers
+        scrollView.hasHorizontalRuler = settings.showColumnRuler
+        scrollView.rulersVisible = settings.showLineNumbers || settings.showColumnRuler
+        refreshRulers()
+    }
+
+    private func refreshRulers() {
+        let settings = Settings.shared
+        if settings.showLineNumbers {
+            lineRuler.updateThickness()
+            lineRuler.needsDisplay = true
+        }
+        if settings.showColumnRuler {
+            columnRuler.updateThickness()
+            columnRuler.needsDisplay = true
+        }
+    }
+
+    var rulerStyle: RulerStyle {
+        if Settings.shared.seditMode { return .sedit }
+        return Settings.shared.classicUI ? .classic : .mac
+    }
+
+    var rulerFont: NSFont {
+        return (textAttributes[.font] as? NSFont) ?? Settings.shared.editorFont
+    }
+
+    /// ルーラーの地。本文が半透明でもルーラーは透けさせない
+    var rulerBackground: NSColor {
+        return activeTheme.background.withAlphaComponent(1)
+    }
+
+    var rulerText: NSColor {
+        return activeTheme.text
+    }
+
+    var currentLineNumber: Int {
+        return lineNumber(at: caretLocation)
+    }
+
+    var totalLineCount: Int {
+        if let total = totalLinesCache { return total }
+        let total = countNewlines(in: NSRange(location: 0, length: textStorage.length)) + 1
+        totalLinesCache = total
+        return total
+    }
+
+    var caretX: CGFloat? {
+        let length = textStorage.length
+        let origin = textView.textContainerOrigin
+        guard length > 0 else { return origin.x + textContainer.lineFragmentPadding }
+        let location = min(caretLocation, length)
+        if location == length {
+            // いちばん最後: 最後が改行なら次の行の頭、そうでなければ最後の字のうしろ
+            let extra = layoutManager.extraLineFragmentRect
+            if !extra.isEmpty {
+                return origin.x + extra.minX + textContainer.lineFragmentPadding
+            }
+            let last = layoutManager.glyphIndexForCharacter(at: length - 1)
+            return origin.x + layoutManager.boundingRect(forGlyphRange: NSRange(location: last, length: 1), in: textContainer).maxX
+        }
+        let glyph = layoutManager.glyphIndexForCharacter(at: location)
+        let line = layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+        return origin.x + line.minX + layoutManager.location(forGlyphAt: glyph).x
+    }
+
+    // MARK: - 文字数（改行は数えない。絵文字なども見た目どおり 1 文字）
+
+    /// 大きい文書は打つたびに数え直すと重いので、少し落ち着いてから数える（それまでは前の数）
+    private var characterCount: Int {
+        if let count = characterCountCache { return count }
+        if textStorage.length > 1_000_000 {
+            scheduleCharacterCount()
+            return lastCharacterCount
+        }
+        return countCharactersNow()
+    }
+
+    private var lastCharacterCount = 0
+
+    @discardableResult
+    private func countCharactersNow() -> Int {
+        let count = max(0, textStorage.string.count - (totalLineCount - 1))
+        characterCountCache = count
+        lastCharacterCount = count
+        return count
+    }
+
+    private func scheduleCharacterCount() {
+        guard !characterCountScheduled else { return }
+        characterCountScheduled = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            self.characterCountScheduled = false
+            guard Settings.shared.showCharacterCount, self.characterCountCache == nil else { return }
+            self.countCharactersNow()
+            self.updateStatusNow()
+        }
+    }
+
+    private static let numberFormatter: NumberFormatter = {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter
+    }()
+
+    private static func formatted(_ value: Int) -> String {
+        return numberFormatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    /// 選んでるときは「選んだ数 / 全体」
+    private func characterCountText(unit: String) -> String {
+        let total = EditorWindowController.formatted(characterCount)
+        // ⌥ドラッグの矩形選択などで何か所も選んでるときは足し合わせる
+        let ranges = textView.selectedRanges.map { $0.rangeValue }.filter { $0.length > 0 }
+        guard !ranges.isEmpty else { return total + unit }
+        let count = ranges.reduce(0) { sum, range in
+            sum + textStorage.mutableString.substring(with: range).count - countNewlines(in: range)
+        }
+        return EditorWindowController.formatted(max(0, count)) + " / " + total + unit
     }
 
     private func disableIfAvailable(_ setter: String, key: String, value: Int) {
@@ -159,47 +365,76 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func applyFont() {
-        let base = Settings.shared.font
+        let base = Settings.shared.editorFont
         let size = max(2, base.pointSize * CGFloat(zoomPercent) / 100)
         let font = NSFont(descriptor: base.fontDescriptor, size: size) ?? base
-        lineHeightDelegate.update(for: font, layoutManager: layoutManager)
+        lineHeightDelegate.update(for: font, layoutManager: layoutManager, spacing: Settings.shared.lineSpacing)
+        scrollView.verticalLineScroll = max(1, lineHeightDelegate.lineHeight)   // スクロールバーの矢印で 1 行ずつ
+        layoutManager.pixelFontDotSize = font.fontName == Settings.pc98FontName ? font.pointSize / 16 : nil
+        textView.needsDisplay = true
 
         let style = EditorWindowController.paragraphStyle(for: font)
-        textAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: NSColor.textColor]
+        textAttributes = [.font: font, .paragraphStyle: style, .foregroundColor: activeTheme.text]
         textView.defaultParagraphStyle = style
         textView.typingAttributes = textAttributes
 
         textStorage.beginEditing()
         textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
         textStorage.endEditing()
+        updateTextInsets()
+        updateSeditWrapWidth()   // ズームで ↓ の幅が変わる
+        refreshRulers()          // 行番号と桁の幅もフォントに合わせる
+        // SEDIT 風の上の行と下の欄も、ズームに合わせて大きくする
+        if seditLine.scale != seditScale || functionBar.scale != seditScale {
+            seditLine.scale = seditScale
+            functionBar.scale = seditScale
+            if Settings.shared.seditMode {
+                layoutContent()
+            }
+        }
+    }
+
+    /// SEDIT 風の上の行と下の欄の倍率（ズーム 100% = 1）
+    private var seditScale: CGFloat {
+        return CGFloat(zoomPercent) / 100
     }
 
     func applyWordWrap() {
-        let size = scrollView.contentSize
+        let size = visibleTextSize
+        let classic = Settings.shared.classicUI
         if Settings.shared.wordWrap {
             scrollView.hasHorizontalScroller = false
             textView.isHorizontallyResizable = false
             textView.autoresizingMask = [.width]
-            textContainer.widthTracksTextView = true
+            // SEDIT 風は右に ↓ の 1 桁を残すので、幅は自分で合わせる
+            textContainer.widthTracksTextView = !Settings.shared.seditMode
             textView.setFrameSize(NSSize(width: size.width, height: textView.frame.height))
             let inset = textView.textContainerInset.width * 2
             textContainer.size = NSSize(width: max(0, size.width - inset), height: EditorWindowController.unlimited)
         } else {
-            scrollView.hasHorizontalScroller = true
+            scrollView.hasHorizontalScroller = !classic   // Windows 2000 風のときは自前のスクロールバー
             textView.isHorizontallyResizable = true
             // ウィンドウを狭めても本文の幅は縮めない（縮めると長い行の右側にスクロールできなくなる）
             textView.autoresizingMask = []
             textContainer.widthTracksTextView = false
             textContainer.size = NSSize(width: EditorWindowController.unlimited, height: EditorWindowController.unlimited)
         }
+        layoutContent()
         updateTextViewMinSize()
+        updateSeditWrapWidth()
         textView.sizeToFit()
         textView.scrollRangeToVisible(textView.selectedRange())
     }
 
+    /// 本文が見えてるところの大きさ。行番号と桁ルーラーのぶんは除く（EditorScrollView がクリップビューをルーラーの外に置くので。
+    /// NSScrollView.contentSize はルーラーを引かんので、折り返しの幅に使うと右がルーラーの幅だけ見切れてた）
+    private var visibleTextSize: NSSize {
+        return scrollView.contentView.bounds.size
+    }
+
     /// 本文が短くてもウィンドウいっぱいをクリックできるようにしておく
     private func updateTextViewMinSize() {
-        let size = scrollView.contentSize
+        let size = visibleTextSize
         let wrap = Settings.shared.wordWrap
         textView.minSize = NSSize(width: wrap ? 0 : size.width, height: size.height)
         var frameSize = textView.frame.size
@@ -219,19 +454,196 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     @objc private func clipViewFrameDidChange(_ notification: Notification) {
         updateTextViewMinSize()
+        updateSeditWrapWidth()
+    }
+
+    /// SEDIT 風で折り返すとき: 右端に改行の ↓ が入る 1 桁を残して折り返す
+    private func updateSeditWrapWidth() {
+        guard Settings.shared.seditMode, Settings.shared.wordWrap else { return }
+        let font = textView.typingAttributes[.font] as? NSFont
+        let reserve = ceil((font?.pointSize ?? 16) / 2)
+        // すき間は左だけ（右は ↓ の reserve）
+        let width = max(0, visibleTextSize.width - textView.textContainerInset.width - reserve)
+        let size = NSSize(width: width, height: EditorWindowController.unlimited)
+        if textContainer.size != size {
+            textContainer.size = size
+        }
     }
 
     func applyStatusBarVisibility() {
-        guard let content = window.contentView else { return }
-        let show = Settings.shared.showStatusBar
-        let bounds = content.bounds
-        let barHeight = show ? StatusBarView.height : 0
-        statusBar.isHidden = !show
-        statusBar.frame = NSRect(x: 0, y: 0, width: bounds.width, height: StatusBarView.height)
-        scrollView.frame = NSRect(x: 0, y: barHeight, width: bounds.width, height: bounds.height - barHeight)
-        if show {
+        layoutContent()
+        if Settings.shared.showStatusBar {
             updateStatusNow()
         }
+    }
+
+    /// Windows 2000 風にする／戻す。ウィンドウの外側の大きさは変えない
+    func applyClassicUI() {
+        let classic = Settings.shared.classicUI
+        // Mac の全画面のまま枠を付け外しすると全画面の状態が壊れるので、全画面を抜けてから切り替える
+        if window.styleMask.contains(.fullScreen) {
+            if !classicAfterFullScreenExit {
+                classicAfterFullScreenExit = true
+                window.toggleFullScreen(nil)
+            }
+            return
+        }
+        // Windows 2000 風（枠なし）のときは Mac の全画面にさせない
+        window.collectionBehavior = classic ? [.fullScreenNone] : []
+        let leavingClassic = window.isClassic && !classic
+        var frame = leavingClassic ? window.leaveClassicMaximize() : window.frame
+        window.styleMask = classic ? [.closable, .miniaturizable, .resizable] : [.titled, .closable, .miniaturizable, .resizable]
+        if leavingClassic {
+            // 枠なしの間は画面のいちばん上まで行ける。Mac のタイトルバーがメニューバーの下に潜らんよう収める
+            frame = window.constrainFrameRect(frame, to: window.screen ?? NSScreen.main)
+        }
+        window.setFrame(frame, display: false)
+        window.hasShadow = true
+        // まわりの部品だけ Windows 2000 の明るい色に固定する（ウィンドウごと固定すると本文までテーマの明暗に従わなくなる）
+        let chromeAppearance = classic ? NSAppearance(named: .aqua) : nil
+        for view in [titleBar, menuBar, verticalBar, horizontalBar, statusBar] as [NSView] {
+            view.appearance = chromeAppearance
+        }
+        updateWindowBackground()
+
+        rootView.classic = classic
+        for view in [titleBar, menuBar, verticalBar, horizontalBar] as [NSView] {
+            if !classic {
+                view.removeFromSuperview()
+            } else if view.superview == nil {
+                rootView.addSubview(view)
+            }
+        }
+        if classic {
+            menuBar.reload()
+        }
+        updateWindowAppearance()
+        scrollView.hasVerticalScroller = !classic
+        scrollView.hasHorizontalScroller = !classic && !Settings.shared.wordWrap
+        statusBar.classic = classic
+        refreshRulers()
+        layoutContent()
+        updateTitle()
+        window.makeFirstResponder(textView)
+    }
+
+    /// SEDIT 風のときは SEDIT の色（黒地に白）、そうでなければ［テーマ］
+    private var activeTheme: EditorTheme {
+        return Settings.shared.seditMode ? Sedit.theme : Settings.shared.theme
+    }
+
+    /// SEDIT 風にする／戻す
+    func applySeditMode() {
+        let sedit = Settings.shared.seditMode
+        for view in [seditLine, functionBar] as [NSView] {
+            if !sedit {
+                view.removeFromSuperview()
+            } else if view.superview == nil {
+                rootView.addSubview(view)
+            }
+        }
+        textView.showsSeditMarks = sedit
+        totalLinesCache = nil
+        updateWindowAppearance()
+        applyTheme()      // 色と PC-9800 フォント（ルーラーの見た目も変わる）
+        applyWordWrap()   // 余白が変わったので、折り返しの幅と並べ方を合わせ直す
+        updateStatusNow()
+    }
+
+    /// SEDIT 風を Mac の枠で出すときは、スクロールバーなども暗くする
+    private func updateWindowAppearance() {
+        let settings = Settings.shared
+        window.appearance = settings.seditMode && !settings.classicUI ? NSAppearance(named: .darkAqua) : nil
+    }
+
+    /// テーマ（文字・背景・選択・カーソルの色）と背景の不透明度・画像を反映する
+    func applyTheme() {
+        let theme = activeTheme
+        textView.insertionPointColor = theme.cursor
+        var selection: [NSAttributedString.Key: Any] = [.backgroundColor: theme.selection]
+        if let selectionText = theme.selectionText {
+            selection[.foregroundColor] = selectionText
+        }
+        textView.selectedTextAttributes = selection
+        backgroundView.color = theme.background
+        applyBackground()
+        applyFont()   // 文字の色
+    }
+
+    /// 背景の不透明度と画像だけ
+    func applyBackground() {
+        let settings = Settings.shared
+        backgroundView.opacity = settings.backgroundOpacity
+        backgroundView.image = BackgroundImage.image
+        backgroundView.imageOpacity = settings.backgroundImageOpacity
+        updateWindowBackground()
+        refreshRulers()
+    }
+
+    private func updateWindowBackground() {
+        let opaque = Settings.shared.backgroundOpacity >= 1
+        window.isOpaque = opaque
+        window.backgroundColor = opaque ? (Settings.shared.classicUI ? Classic.face : .windowBackgroundColor) : .clear
+        window.invalidateShadow()
+    }
+
+    /// 本文・ステータスバー・（Windows 2000 風のときは）タイトルバー・メニューバー・スクロールバーを並べる。上が y = 0
+    private func layoutContent() {
+        let bounds = rootView.bounds
+        let sedit = Settings.shared.seditMode
+        let showStatus = Settings.shared.showStatusBar && !sedit   // SEDIT 風は上の行に出す
+        let statusHeight = showStatus ? StatusBarView.height : 0
+        statusBar.isHidden = !showStatus
+
+        /// SEDIT 風なら、いちばん上の行とファンクションキーの欄を取って、残りを返す
+        func carveSeditRows(_ area: NSRect) -> NSRect {
+            guard sedit else { return area }
+            let row = (Sedit.rowHeight * seditScale).rounded()
+            seditLine.frame = NSRect(x: area.minX, y: area.minY, width: area.width, height: row)
+            functionBar.frame = NSRect(x: area.minX, y: max(area.minY, area.maxY - row), width: area.width, height: row)
+            return NSRect(x: area.minX, y: area.minY + row, width: area.width, height: max(0, area.height - row * 2))
+        }
+        /// 本文の欄から、スクロールする部分を取る。SEDIT 風はファンクションキーの欄の上にすき間をあける。
+        /// 上の行の下も 2 ドット（ズームに合わせる）あける。桁ルーラーを出してるときは、ルーラーがあいだに入るのであけない。
+        /// 本文の背景はすき間にも敷くので、テーマの色・半透明・背景画像はそのままつながる
+        func scrollFrame(in text: NSRect) -> NSRect {
+            guard sedit else { return text }
+            let top = Settings.shared.showColumnRuler ? 0 : max(1, (2 * seditScale).rounded())
+            return NSRect(x: text.minX, y: text.minY + top, width: text.width,
+                          height: max(0, text.height - top - Sedit.editorMargin))
+        }
+
+        guard Settings.shared.classicUI else {
+            rootView.clientRect = .zero
+            statusBar.frame = NSRect(x: 0, y: bounds.height - StatusBarView.height, width: bounds.width, height: StatusBarView.height)
+            let text = carveSeditRows(NSRect(x: 0, y: 0, width: bounds.width, height: max(0, bounds.height - statusHeight)))
+            scrollView.frame = scrollFrame(in: text)
+            backgroundView.frame = text
+            return
+        }
+
+        let border = Classic.frameWidth
+        let innerWidth = max(0, bounds.width - border * 2)
+        titleBar.frame = NSRect(x: border, y: border, width: innerWidth, height: Classic.captionHeight)
+        menuBar.frame = NSRect(x: border, y: titleBar.frame.maxY + 1, width: innerWidth, height: Classic.menuBarHeight)
+        statusBar.frame = NSRect(x: border, y: bounds.height - border - StatusBarView.height, width: innerWidth, height: StatusBarView.height)
+
+        // 本文のまわりは 2pt のへこみ（Windows の WS_EX_CLIENTEDGE）
+        let client = NSRect(x: border, y: menuBar.frame.maxY, width: innerWidth,
+                            height: max(0, bounds.height - border - statusHeight - menuBar.frame.maxY))
+        rootView.clientRect = client
+        let inner = carveSeditRows(client.insetBy(dx: 2, dy: 2))
+        let barSize = Classic.scrollBarSize
+        let showHorizontal = !Settings.shared.wordWrap
+        let text = NSRect(x: inner.minX, y: inner.minY, width: max(0, inner.width - barSize),
+                          height: max(0, inner.height - (showHorizontal ? barSize : 0)))
+        scrollView.frame = scrollFrame(in: text)
+        backgroundView.frame = text
+        rootView.textRect = text
+        verticalBar.frame = NSRect(x: text.maxX, y: text.minY, width: barSize, height: text.height)
+        horizontalBar.isHidden = !showHorizontal
+        horizontalBar.frame = NSRect(x: text.minX, y: text.maxY, width: text.width, height: barSize)
+        rootView.needsDisplay = true
     }
 
     func zoom(by delta: Int) {
@@ -242,6 +654,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let clamped = max(EditorWindowController.minZoom, min(EditorWindowController.maxZoom, value))
         guard clamped != zoomPercent else { return }
         zoomPercent = clamped
+        Settings.shared.zoomPercent = clamped   // 次に開くウィンドウ（次の起動も）このズームで
         applyFont()
         updateStatusNow()
     }
@@ -256,13 +669,24 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         return fileURL == nil && !isDirty && textStorage.length == 0
     }
 
+    /// マクロの記録を始めた／やめたとき
+    func refreshTitle() {
+        updateTitle()
+        updateStatusNow()
+    }
+
     private func updateTitle() {
-        window.title = (isDirty ? "*" : "") + displayName + " - " + AppInfo.name
+        let recording = MacroRecorder.shared.isRecording ? "  [マクロ記録中]" : ""
+        window.title = (isDirty ? "*" : "") + displayName + " - " + AppInfo.name + recording
         window.representedURL = fileURL
         window.isDocumentEdited = isDirty
+        titleBar.refresh()
     }
 
     private func setDirty(_ dirty: Bool) {
+        if dirty {
+            revision &+= 1   // 落ちたとき用の控えを書き直す目印
+        }
         guard isDirty != dirty else { return }
         isDirty = dirty
         updateTitle()
@@ -290,11 +714,14 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         }
 
         replaceAllText(with: text)
+        discardRecovery()   // 前の文書（保存せずに捨てた）の控えを残さん
+        RecentFiles.note(url)
         fileURL = url
         encoding = loaded.encoding
         lineEnding = loaded.lineEnding
         isDirty = appendedLog
         updateTitle()
+        applyRememberedFrame(for: url)
 
         let caret = appendedLog ? (text as NSString).length : 0
         textView.setSelectedRange(NSRange(location: caret, length: 0))
@@ -333,6 +760,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textStorage.endEditing()
         textView.undoManager?.removeAllActions()
         lineCache = nil
+        rulerLineCache = nil
+        totalLinesCache = nil
+        characterCountCache = nil
         updateTextViewMinSize()
     }
 
@@ -377,11 +807,12 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         return write(to: url, encoding: encoding, lineEnding: lineEnding)
     }
 
+    /// directory: 保存ダイアログを開く場所（nil = 今のファイルのあるところ）
     @discardableResult
-    func saveAs() -> Bool {
+    func saveAs(in directory: URL? = nil) -> Bool {
         let suggested = fileURL?.lastPathComponent ?? "無題.txt"
         guard let choice = FilePanels.runSave(suggestedName: suggested,
-                                              directory: fileURL?.deletingLastPathComponent(),
+                                              directory: directory ?? fileURL?.deletingLastPathComponent(),
                                               encoding: encoding,
                                               lineEnding: lineEnding) else { return false }
         return write(to: choice.url, encoding: choice.encoding, lineEnding: choice.lineEnding)
@@ -424,7 +855,110 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         isDirty = false
         updateTitle()
         updateStatusNow()
+        rememberFrame()
+        RecentFiles.note(url)
+        writeRecoveryIfNeeded()   // 保存したので控えを消す
         return true
+    }
+
+    // MARK: - ファイルごとのウィンドウの位置と大きさ
+
+    /// このファイルを前に開いた・保存したときの位置と大きさにする。つながってない画面の位置やったら、大きさだけ使う
+    private func applyRememberedFrame(for url: URL) {
+        pendingRememberedFrame = nil
+        guard var frame = WindowFrames.frame(for: url) else {
+            rememberFrame()
+            return
+        }
+        // 覚えた位置がある画面に収める。その画面がもう無かったら、大きさだけ使って今の画面に
+        var screen = NSScreen.screens.first(where: { $0.visibleFrame.intersects(frame) })
+        if screen == nil {
+            frame.origin = NSPoint(x: window.frame.minX, y: window.frame.maxY - frame.height)
+            screen = window.screen ?? NSScreen.main
+        }
+        frame = window.constrainFrameRect(frame, to: screen)
+        // 最大化・全画面のままにして、元に戻したときにこのファイルの位置と大きさになるようにする
+        if window.isClassicMaximized {
+            window.setClassicRestoreFrame(frame)
+            return
+        }
+        if window.styleMask.contains(.fullScreen) {
+            pendingRememberedFrame = frame
+            return
+        }
+        if frame != window.frame {
+            window.setFrame(frame, display: true)
+        }
+    }
+
+    /// 開いた・保存したファイルのウィンドウなら、今の位置と大きさを覚える（全画面と Windows 2000 風の最大化のときは覚えない）
+    private func rememberFrame() {
+        guard let url = fileURL, !isClosed, window.isVisible, !window.styleMask.contains(.fullScreen),
+              !window.isClassicMaximized else { return }
+        WindowFrames.remember(window.frame, for: url)
+    }
+
+    // MARK: - 落ちたとき用の控え
+
+    /// 保存してない中身が前の控えから変わってたら書く。保存してない状態でなくなったら消す（AppDelegate がときどき呼ぶ）
+    func writeRecoveryIfNeeded() {
+        guard !isClosed else { return }
+        guard isDirty else {
+            if recoveredRevision != nil {
+                Recovery.remove(id: recoveryID)
+                recoveredRevision = nil
+            }
+            return
+        }
+        guard recoveredRevision != revision else { return }
+        let written = revision
+        recoveredRevision = written
+        Recovery.write(Recovery.Record(text: textView.string, path: fileURL?.path,
+                                       encoding: encoding.rawValue, lineEnding: lineEnding.rawValue), id: recoveryID) { [weak self] ok in
+            // 書けんかったら、次の回にまた書く
+            if !ok, let self = self, self.recoveredRevision == written {
+                self.recoveredRevision = -1
+            }
+        }
+    }
+
+    /// ふつうに閉じた・終わったとき: 控えを消す
+    func discardRecovery() {
+        Recovery.remove(id: recoveryID)
+        recoveredRevision = nil
+    }
+
+    /// 前回落ちたときの控えから中身を戻す。保存してない状態（*）にして、元のファイルがあればそこへ上書き保存できる
+    func restore(_ record: Recovery.Record, id: UUID) {
+        replaceAllText(with: record.text)
+        fileURL = record.path.map { URL(fileURLWithPath: $0) }
+        encoding = TextEncoding(rawValue: record.encoding) ?? .utf8
+        lineEnding = LineEnding(rawValue: record.lineEnding) ?? .lf
+        recoveryID = id          // 控えはこのウィンドウが引き継ぐ（閉じたら消える）
+        isDirty = true
+        recoveredRevision = revision
+        updateTitle()
+        textView.setSelectedRange(NSRange(location: 0, length: 0))
+        caretLocation = 0
+        updateStatusNow()
+        if let url = fileURL {
+            applyRememberedFrame(for: url)
+        }
+    }
+
+    /// ［表示］→［設定をすべて初期値に戻す…］のあと: 全部を設定に合わせ直す。ズームも 100% に戻す
+    func applyAllSettings() {
+        zoomPercent = Settings.shared.zoomPercent
+        applyTheme()
+        applyWordWrap()
+        // 枠の付け外しは、変わるときだけ（変わらんのに呼ぶと、Mac の全画面を抜けてしまう）
+        if window.isClassic != Settings.shared.classicUI {
+            applyClassicUI()
+        }
+        applySeditMode()
+        applyRulers()
+        applyStatusBarVisibility()
+        updateStatusNow()
     }
 
     private func showError(_ message: String, _ error: Error) {
@@ -437,26 +971,55 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     // MARK: - メニューの処理（ファイル）
 
-    @objc func fileNew(_ sender: Any?) {
-        guard confirmDiscardIfNeeded() else { return }
-        replaceAllText(with: "")
-        fileURL = nil
-        encoding = .utf8
-        lineEnding = .lf
-        isDirty = false
-        caretLocation = 0
-        updateTitle()
-        updateStatusNow()
+    /// ［ファイル］→［iCloud Drive から開く…］: 開くダイアログを iCloud Drive で開く
+    @objc func fileOpenFromICloud(_ sender: Any?) {
+        openWithPanel(directory: FilePanels.iCloudDrive)
+    }
+
+    /// ［ファイル］→［iCloud Drive に保存…］: 保存ダイアログを iCloud Drive で開く（iPad の「ファイル」からも開ける）
+    @objc func fileSaveToICloud(_ sender: Any?) {
+        saveAs(in: FilePanels.iCloudDrive)
     }
 
     @objc func fileOpen(_ sender: Any?) {
-        guard confirmDiscardIfNeeded() else { return }
-        guard let choice = FilePanels.runOpen() else { return }
+        openWithPanel(directory: nil)
+    }
+
+    /// ［ファイル］→［最近使ったファイル］の項目: ［開く…］と同じく、このウィンドウで開く
+    @objc func openRecentFile(_ sender: Any?) {
+        guard let path = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: path) else {
+            RecentFiles.forget(url)
+            showError("「\(url.lastPathComponent)」が見つかりません。", CocoaError(.fileNoSuchFile))
+            return
+        }
+        if let other = AppDelegate.shared.controller(showing: url) {
+            other.window.makeKeyAndOrderFront(nil)
+            return
+        }
+        guard confirmDiscardIfNeeded() else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
+        if !load(url, encoding: nil) {
+            MacroRecorder.shared.abortIfPlaying()
+        }
+    }
+
+    private func openWithPanel(directory: URL?) {
+        // 「保存しますか?」やダイアログをキャンセルしたとき・開けんかったときは、マクロの再生もそこでやめる
+        guard confirmDiscardIfNeeded(), let choice = FilePanels.runOpen(directory: directory) else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
         if let other = AppDelegate.shared.controller(showing: choice.url), other !== self {
             other.window.makeKeyAndOrderFront(nil)
             return
         }
-        load(choice.url, encoding: choice.encoding)
+        if !load(choice.url, encoding: choice.encoding) {
+            MacroRecorder.shared.abortIfPlaying()
+        }
     }
 
     @objc func fileSave(_ sender: Any?) {
@@ -548,7 +1111,10 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         alert.accessoryView = field
         alert.layout()
         alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        guard alert.runModal() == .alertFirstButtonReturn else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
 
         let raw = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let digits = raw.applyingTransform(.fullwidthToHalfwidth, reverse: false) ?? raw
@@ -563,6 +1129,69 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.setSelectedRange(range)
         textView.scrollRangeToVisible(range)
         window.makeFirstResponder(textView)
+    }
+
+    /// ［編集］→［ファイルを挿入…］（SEDIT の f・4）: 選んだファイルの中身をカーソルの位置に入れる
+    @objc func insertFile(_ sender: Any?) {
+        guard let choice = FilePanels.runOpen() else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
+        let loaded: FileIO.Loaded
+        do {
+            loaded = try FileIO.load(choice.url, encoding: choice.encoding)
+        } catch {
+            showError("「\(choice.url.lastPathComponent)」を読めませんでした。", error)
+            return
+        }
+        // 打ってた文字とは別の「元に戻す」にする
+        let range = textView.selectedRange()
+        textView.breakUndoCoalescing()
+        guard textView.shouldChangeText(in: range, replacementString: loaded.text) else { return }
+        textStorage.replaceCharacters(in: range, with: NSAttributedString(string: loaded.text, attributes: textAttributes))
+        textView.didChangeText()
+        textView.undoManager?.setActionName("ファイルの挿入")
+        textView.setSelectedRange(NSRange(location: range.location + (loaded.text as NSString).length, length: 0))
+        textView.scrollRangeToVisible(textView.selectedRange())
+        if loaded.lossy {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = "一部の文字を正しく読み込めませんでした。"
+            alert.informativeText = "\(loaded.encoding.displayName) として入れました。文字化けしている場合は、元に戻してから、開くダイアログの「文字コード」を指定して入れ直してください。"
+            alert.runModal()
+        }
+    }
+
+    // MARK: - SEDIT 風のファンクションキー（F1〜F10 と、下の欄のクリック）
+
+    func performSeditFunction(_ number: Int) {
+        MacroRecorder.shared.record(.sedit(number))
+        switch number {
+        case 1: textView.cut(nil)
+        case 2: textView.copy(nil)
+        case 3: textView.paste(nil)
+        case 4: insertFile(nil)
+        case 5: popUpControlMenu()
+        case 6: showFindPanel(nil)
+        case 7: findNextMatch(nil)
+        case 8: showReplacePanel(nil)
+        case 9: goToLine(nil)
+        case 10: window.performClose(nil)
+        default: break
+        }
+    }
+
+    /// ｺﾝﾄﾛｰﾙ: ［ファイル］メニューをその場に出す
+    private func popUpControlMenu() {
+        // SEDIT 風でないとき（それで記録したマクロを再生したときなど）は、下の欄が無いので出さない
+        guard functionBar.window != nil else {
+            NSSound.beep()
+            return
+        }
+        guard let fileMenu = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "ファイル" })?.submenu else { return }
+        let menu = fileMenu.copyKeepingDelegates()
+        let rect = functionBar.itemRect(4)
+        menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.minY), in: functionBar)
     }
 
     // MARK: - メニューの処理（表示）
@@ -681,6 +1310,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.didChangeText()
         textView.undoManager?.setActionName("すべて置換")
         lineCache = nil
+        rulerLineCache = nil
+        totalLinesCache = nil
+        characterCountCache = nil
         return ranges.count
     }
 
@@ -706,19 +1338,28 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         return count
     }
 
-    private func lineNumber(at location: Int) -> Int {
+    func lineNumber(at location: Int) -> Int {
+        return lineNumber(at: location, cache: &lineCache)
+    }
+
+    func rulerLineNumber(at location: Int) -> Int {
+        return lineNumber(at: location, cache: &rulerLineCache)
+    }
+
+    /// 前に数えた位置からの差だけ数える
+    private func lineNumber(at location: Int, cache: inout (location: Int, line: Int)?) -> Int {
         let target = max(0, min(location, textStorage.length))
         let line: Int
-        if let cache = lineCache {
-            if target >= cache.location {
-                line = cache.line + countNewlines(in: NSRange(location: cache.location, length: target - cache.location))
+        if let known = cache {
+            if target >= known.location {
+                line = known.line + countNewlines(in: NSRange(location: known.location, length: target - known.location))
             } else {
-                line = cache.line - countNewlines(in: NSRange(location: target, length: cache.location - target))
+                line = known.line - countNewlines(in: NSRange(location: target, length: known.location - target))
             }
         } else {
             line = 1 + countNewlines(in: NSRange(location: 0, length: target))
         }
-        lineCache = (location: target, line: line)
+        cache = (location: target, line: line)
         return line
     }
 
@@ -769,9 +1410,22 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func updateStatusNow() {
-        guard Settings.shared.showStatusBar else { return }
+        refreshRulers()
+        let settings = Settings.shared
+        if settings.seditMode {
+            let path = fileURL.map { ($0.path as NSString).abbreviatingWithTildeInPath } ?? "無題"
+            seditLine.update(path: path, line: lineNumber(at: caretLocation), totalLines: totalLineCount,
+                             column: columnNumber(at: caretLocation),
+                             characters: settings.showCharacterCount ? characterCountText(unit: "") : nil,
+                             isRecording: MacroRecorder.shared.isRecording,
+                             encoding: encoding, lineEnding: lineEnding)
+            return
+        }
+        guard settings.showStatusBar else { return }
+        statusBar.showsCharacterCount = settings.showCharacterCount
         statusBar.update(line: lineNumber(at: caretLocation),
                          column: columnNumber(at: caretLocation),
+                         characters: settings.showCharacterCount ? characterCountText(unit: " 文字") : "",
                          zoom: zoomPercent,
                          lineEnding: lineEnding,
                          encoding: encoding)
@@ -783,12 +1437,31 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         if let cache = lineCache, affectedCharRange.location < cache.location {
             lineCache = nil
         }
+        if let cache = rulerLineCache, affectedCharRange.location < cache.location {
+            rulerLineCache = nil
+        }
+        // 全体の行数は、変わる分の改行だけ数えて足し引きする（1 字打つたびに全部数え直さない）
+        if let total = totalLinesCache, let replacement = replacementString {
+            let removed = countNewlines(in: affectedCharRange)
+            let added = replacement.utf16.reduce(0) { $0 + ($1 == 10 ? 1 : 0) }
+            totalLinesCache = total - removed + added
+        } else {
+            totalLinesCache = nil
+        }
         return true
     }
 
     func textDidChange(_ notification: Notification) {
+        characterCountCache = nil
+        textView.invalidateEndOfText()
         if let undoManager = textView.undoManager, undoManager.isUndoing || undoManager.isRedoing {
             lineCache = nil
+            rulerLineCache = nil
+            totalLinesCache = nil   // 元に戻すは shouldChangeTextIn を通らんことがあるので数え直す
+            // 元に戻すと、そのときの色や大きさ（テーマやズームを変える前）まで戻ってくるので、今のに揃え直す
+            textStorage.beginEditing()
+            textStorage.setAttributes(textAttributes, range: NSRange(location: 0, length: textStorage.length))
+            textStorage.endEditing()
         }
         setDirty(true)
         scheduleStatusUpdate()
@@ -827,15 +1500,50 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func windowWillClose(_ notification: Notification) {
-        Settings.shared.windowFrame = window.frame
+        rememberFrame()
+        isClosed = true
+        discardRecovery()
         AppDelegate.shared.controllerWillClose(self)
     }
 
     func windowDidMove(_ notification: Notification) {
-        Settings.shared.windowFrame = window.frame
+        rememberFrame()
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {
-        Settings.shared.windowFrame = window.frame
+        rememberFrame()
+    }
+
+    // Windows 2000 風のタイトルバーは、アクティブかどうかで色が変わり、最大化でボタンの絵が変わる
+    func windowDidBecomeKey(_ notification: Notification) {
+        titleBar.refresh()
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        titleBar.refresh()
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        titleBar.refresh()
+        // Windows 2000 風の枠を引っぱったときや ⌘ の拡大など、マウスで枠を引っぱる以外の大きさの変更も覚える
+        if !window.inLiveResize {
+            rememberFrame()
+        }
+    }
+
+    func windowDidExitFullScreen(_ notification: Notification) {
+        if let frame = pendingRememberedFrame {
+            pendingRememberedFrame = nil
+            window.setFrame(frame, display: true)
+        }
+        guard classicAfterFullScreenExit else { return }
+        classicAfterFullScreenExit = false
+        applyClassicUI()
+        // 全画面を抜けると、全画面に入る前の presentationOptions に戻されるので掛け直す
+        AppDelegate.shared.applyPresentationOptions()
+    }
+
+    func windowDidFailToExitFullScreen(_ window: NSWindow) {
+        classicAfterFullScreenExit = false
     }
 }

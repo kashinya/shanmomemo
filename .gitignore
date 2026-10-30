@@ -1,2 +1,4 @@
 build/
 .DS_Store
+Resources/Fonts/
+.build-number

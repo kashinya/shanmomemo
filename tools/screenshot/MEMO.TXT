@@ -1,0 +1,13 @@
+■ SEDIT 風メモ帳 for Mac
+・PC-98 の 16 ドットフォント。ドットはギザギザのまま
+・改行は黄色い ↓、最後に [EOF]
+・下のファンクションキーは F1〜F10 かクリックで
+・行番号と MIFES みたいな桁ルーラーも出せる
+
+A:\>TYPE CONFIG.SYS
+FILES=30
+BUFFERS=20
+DEVICE=A:\DOS\HIMEM.SYS
+DEVICE=A:\DOS\EMM386.EXE /UMB
+DOS=HIGH,UMB
+SHELL=A:\COMMAND.COM A:\ /P

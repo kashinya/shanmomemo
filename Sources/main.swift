@@ -6,6 +6,7 @@ UserDefaults.standard.register(defaults: [
     "ApplePersistenceIgnoreState": true,
 ])
 
+LaunchProbe.mark("main")
 let app = NSApplication.shared
 let appDelegate = AppDelegate()
 app.delegate = appDelegate

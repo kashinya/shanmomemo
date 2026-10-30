@@ -88,6 +88,10 @@ final class FindPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     @discardableResult
     func findNext(in editor: EditorWindowController, backwards: Bool) -> Bool {
         if searchText.isEmpty {
+            if MacroRecorder.shared.isPlaying {
+                MacroRecorder.shared.abortRequested = true   // 何を探すか決まってないので止める
+                return false
+            }
             show(.find, for: editor)
             return false
         }
@@ -175,7 +179,8 @@ final class FindPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
         }
     }
 
-    private func syncOptionsToControls() {
+    /// 検索のオプションのチェックを、設定に合わせる（設定を初期値に戻したときも）
+    func syncOptionsToControls() {
         let settings = Settings.shared
         findMatchCase.state = settings.matchCase ? .on : .off
         replaceMatchCase.state = settings.matchCase ? .on : .off
@@ -194,6 +199,12 @@ final class FindPanelController: NSObject, NSWindowDelegate, NSTextFieldDelegate
     }
 
     private func showNotFound() {
+        // マクロの実行中は聞かずに止める（くり返しの途中で毎回出てこないように）
+        if MacroRecorder.shared.isPlaying {
+            MacroRecorder.shared.abortRequested = true
+            NSSound.beep()
+            return
+        }
         var shown = searchText
         if shown.count > 40 { shown = String(shown.prefix(40)) + "…" }
         let alert = NSAlert()
