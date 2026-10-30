@@ -221,6 +221,9 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     func applyRulers() {
         let settings = Settings.shared
+        if settings.seditMode {
+            layoutContent()   // 上の行の下のすき間は、桁ルーラーを出すかどうかで変わる
+        }
         updateTextInsets()
         updateSeditWrapWidth()
         scrollView.hasVerticalRuler = settings.showLineNumbers
@@ -601,11 +604,13 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             return NSRect(x: area.minX, y: area.minY + row, width: area.width, height: max(0, area.height - row * 2))
         }
         /// 本文の欄から、スクロールする部分を取る。SEDIT 風はファンクションキーの欄の上にすき間をあける。
-        /// 上の行の下は PC-98 の SEDIT と同じくあけない（半角の字は 16 ドットの升の上 3 ドットが空いてるので、それがすき間に見える）。
+        /// 上の行の下も 2 ドット（ズームに合わせる）あける。桁ルーラーを出してるときは、ルーラーがあいだに入るのであけない。
         /// 本文の背景はすき間にも敷くので、テーマの色・半透明・背景画像はそのままつながる
         func scrollFrame(in text: NSRect) -> NSRect {
             guard sedit else { return text }
-            return NSRect(x: text.minX, y: text.minY, width: text.width, height: max(0, text.height - Sedit.editorMargin))
+            let top = Settings.shared.showColumnRuler ? 0 : max(1, (2 * seditScale).rounded())
+            return NSRect(x: text.minX, y: text.minY + top, width: text.width,
+                          height: max(0, text.height - top - Sedit.editorMargin))
         }
 
         guard Settings.shared.classicUI else {

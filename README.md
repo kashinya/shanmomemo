@@ -1,11 +1,37 @@
 # Shanmoメモ帳（SEDITメモ）for Mac
 
 Windows 95〜10 のメモ帳みたいな、ただのテキストエディタ。
+［表示］→［SEDIT 風］で、PC-98（PC-9801）の MS-DOS 5 に付いてた SEDIT みたいな画面にもなる。
+
+![SEDIT 風。黒地に PC-98 の 16 ドットフォント、改行に黄色い ↓、最後に [EOF]、行番号と桁ルーラー、下に F1〜F10 の欄](docs/sedit.png)
+
+Mac に来てから、しっくりくるエディタがなかった。98 のフォントで、SEDIT の見た目で書きたかっただけ。
+
+- 黒地に白、16 ドットの 98 フォント。ズーム 100% ならアンチエイリアスなしで、ドットはギザギザのまま
+- 改行に黄色い ↓、最後に [EOF]。いちばん上に状態の行、下に F1〜F10 の欄
+- 半角:全角がきっちり 1:2。行番号と、MIFES みたいな桁ルーラーも出せる
+- Shift_JIS（CP932）・EUC-JP・UTF-8・UTF-16、CRLF・LF・CR。昔のテキストも、そのままの文字コードで保存
+- キーボードマクロ、テーマ（半透明・背景画像も）
+- Intel Mac と Apple シリコン。macOS 10.15 以降（Apple シリコンは 11 以降）
+
+SEDIT 風にせんでも、Mac の窓のまま 98 フォントで書ける。Windows 2000 風の窓にもできる。
+
+![Mac の見た目のまま、等幅フォントを PC-9800 にして行番号](docs/mac.png)
+
+![Windows 2000 風](docs/win2000.png)
+
+メモ帳なので、よけいなことはせん:
 
 - **タブなし**: 1 ウィンドウ = 1 ファイル。システム設定で「タブで開く: 常に」にしてても、タブにはならない
 - **自動復元なし**: 終了するとき、保存してないものは「保存しますか?」と聞いて終わり。次に起動したら真っさらな「無題」が開く
   （ただし、落ちた・強制終了した・電源が切れたときだけは、保存してなかった中身を次に起動したとき戻す。下の「落ちたとき」）
 - **自動保存もなし**: 保存するまでファイルは変わらない（Mac の「バージョン」機能も使わない）
+
+PC-9800 フォント（[retro-type.com](https://retro-type.com/PC98/font/) の `pc-9800.ttf`）は配布条件が書かれてないので、このリポジトリには入れてない。
+`./build.sh` のときに落としてきて、自分でビルドしたアプリの中にだけ埋め込む（下の「等幅フォント」）。
+なので、使うなら自分の Mac でビルドする。Xcode のコマンドラインツールだけでいい（下の「ビルドとインストール」）。
+
+見た目をまねてるだけで、NEC・Microsoft・SEDIT や MIFES の作り手とは関係ない。
 
 ## ビルドとインストール
 
@@ -13,12 +39,15 @@ Xcode 本体は要らない。コマンドラインツールだけでいい。
 
 ```sh
 xcode-select --install      # 入れてなければ。入ってたら「already installed」と出る
-cd Memocho                  # この zip を展開したフォルダ
+git clone https://github.com/kashinya/shanmomemo.git
+cd shanmomemo
 ./build.sh install          # ビルドして /Applications/Shanmoメモ帳.app に入れる
 ```
 
+2 回目からは `git pull && ./build.sh install`。
+
 `./build.sh` だけなら `build/Shanmoメモ帳.app` ができるだけ（好きな場所に置けばいい）。
-`install` は、前の名前（メモ帳.app や SEDITメモ.app）で入れてた同じアプリを消してから入れる（2 つあると .txt の関連付けが迷うので）。
+`install` は、前の名前（メモ帳.app など）で入れてた同じアプリ（同じ ID）を消してから入れる（2 つあると .txt の関連付けが迷うので）。
 
 バージョンはビルドするたびに 0.01 ずつ上がる（Ver 1.01、1.02、… 1.99、2.00）。数えた回数はリポジトリの `.build-number`（git には入れない）。
 ［Shanmoメモ帳について］と、Finder の「情報を見る」に出る。
@@ -33,8 +62,10 @@ SHANMO なしにするときは `NO_SHANMO_LOGO=1 ./build.sh install`。
 | アイコン | 紙に SHANMO CORPORATION のロゴ | 元の紙だけ |
 | ステータスバーの左はじ | SHANMO のロゴ | なし |
 | 説明（アプリについて・情報を見る） | Copyright (c) 2026 Shanmo Corp | SEDITモード搭載なつかしテキストエディタ |
+| ID（設定の置き場所） | `local.memocho` | `local.memocho.sedit` |
 
-設定は同じ（どっちも `local.memocho`）なので、切り替えても引き継ぐ。Dock や Finder が前のアイコンを覚えてて、すぐ変わらんことがある。
+ID がちがうので、2 つ並べて入れられる（設定は別々）。両方いっぺんに作るなら `./build.sh both`、両方入れるなら `./build.sh install both`（バージョンは同じになる）。
+Dock や Finder が前のアイコンを覚えてて、すぐ変わらんことがある。
 Intel Mac と Apple シリコンの両方で動くユニバーサル版になる。macOS 10.15 以降（Apple シリコンは 11 以降）。
 
 自分の Mac でビルドしたアプリなので、Gatekeeper の「開発元を確認できません」は出ない。
@@ -147,7 +178,7 @@ Mac 全体にはインストールされない。このアプリの中だけで�
 
 ［表示］→［SEDIT 風］で、PC-98 の MS-DOS 5 に付いてた SEDIT（Ver. 1.03）の画面にする。もう一回選ぶと戻る。
 
-- 黒地に白、PC-9800 フォント（ギザギザ）。行番号を出してないときは左に、ファンクションキーの欄の上にも、Mac のときより少し狭いすき間（4pt）をあける。いちばん上の行の下は PC-98 と同じくあけない（行の高さは PC-98 と同じ 16 ドット）
+- 黒地に白、PC-9800 フォント（ギザギザ）。行番号を出してないときは左に、ファンクションキーの欄の上にも、Mac のときより少し狭いすき間（4pt）をあける。いちばん上の行の下は 2 ドット（桁ルーラーを出してるときはあけない）。行の高さは PC-98 と同じ 16 ドット
 - いちばん上の行: ファイルの場所、〈挿入〉、行／全行数、桁、文字コード、改行コード（数字は白地、見出しは水色地）
 - 改行に黄色い ↓、最後に水色の [EOF]
 - 下にファンクションキーの欄（数字は黄色、名前は緑）。F1〜F10 を押すか、欄をクリック
@@ -189,6 +220,8 @@ Mac のまま残るもの: メニューを開いたときの一覧、開く・�
 - 落ちた・強制終了した・電源が切れたあと、次に起動したら、控えの中身でウィンドウを開き直す。保存してない状態（タイトルに *）で、元のファイルがあればそこに上書き保存できる
 - 最後の控えから落ちるまでの 15 秒ぶんは戻らないことがある
 
+ここから下の `local.memocho` は、SEDITメモなら `local.memocho.sedit` に読みかえる（ファイルの置き場所の名前も同じ）。
+
 隠し設定: タブ幅（初期値は Windows と同じ 8）
 
 ```sh
@@ -206,6 +239,7 @@ defaults delete local.memocho IMELog             # やめる
 
 ```sh
 defaults delete local.memocho
+defaults delete local.memocho.sedit
 rm -rf "/Applications/Shanmoメモ帳.app" "/Applications/SEDITメモ.app"
 ```
 
@@ -213,5 +247,7 @@ rm -rf "/Applications/Shanmoメモ帳.app" "/Applications/SEDITメモ.app"
 
 - `Sources/` … Swift（AppKit）。Xcode プロジェクトなし、`build.sh` が swiftc を直接呼ぶ
 - `Resources/AppIcon.icns` … アイコン（SHANMO のロゴ入り）。`AppIcon-plain.icns` はロゴなし（`NO_SHANMO_LOGO=1` のとき）
+- `docs/` … README の画面写真（CI で、PC-9800 フォント込みのビルドを動かして撮る）
+- `tools/` … CI 用（起動の速さを測る・画面写真の見本の文）
 - `Resources/StatusLogo.png` … ステータスバーのロゴ
 - アプリ名を変えたいとき: `APP_NAME=Notepad ./build.sh`

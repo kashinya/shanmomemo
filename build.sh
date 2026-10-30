@@ -3,6 +3,8 @@
 #   ./build.sh           … build/Shanmoメモ帳.app を作る
 #   ./build.sh install   … 作ったあと /Applications にコピー（前の名前で入れてた同じアプリは消す）
 #   NO_SHANMO_LOGO=1 ./build.sh … SHANMO なし: 名前は「SEDITメモ」、アイコンは元の紙だけ、ステータスバーにロゴを出さない
+#                                  （ID は local.memocho.sedit。Shanmoメモ帳と並べて入れられる。設定は別々）
+#   ./build.sh both             … Shanmoメモ帳 と SEDITメモ を両方作る（./build.sh install both で両方入れる。バージョンは同じ）
 # バージョンはビルドするたびに 0.01 ずつ上がる（1.01、1.02、… 1.99、2.00）。数えた回数は .build-number（git には入れない）
 #   SWIFT_OPT=-Osize ./build.sh … 速さより大きさ優先で最適化（ふつうは -O）
 #   NO_STRIP=1 ./build.sh       … 関数名などの記号を残す（ふつうは落として 3 割小さくする）
@@ -10,23 +12,44 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# both: SHANMO ありとなしを続けて作る。バージョンは 1 つぶんだけ進めて、両方同じにする
+ARGS=()
+BOTH=""
+for ARG in "$@"; do
+  if [ "$ARG" = "both" ]; then BOTH=1; else ARGS+=("$ARG"); fi
+done
+if [ -n "$BOTH" ]; then
+  NEXT_BUILD="$(cat .build-number 2>/dev/null || true)"
+  case "$NEXT_BUILD" in
+    ''|*[!0-9]*) NEXT_BUILD=0 ;;
+  esac
+  export MEMOCHO_BUILD_NUMBER=$((10#$NEXT_BUILD + 1))
+  export MEMOCHO_KEEP_APPS=1   # 1 つめに作ったのを、2 つめのときに消さんように
+  rm -rf build/*.app
+  NO_SHANMO_LOGO= "./$(basename "$0")" ${ARGS[@]+"${ARGS[@]}"}
+  NO_SHANMO_LOGO=1 "./$(basename "$0")" ${ARGS[@]+"${ARGS[@]}"}
+  exit 0
+fi
+
 # 名前と説明（Finder の「情報を見る」とアプリについての説明）は、SHANMO ありなしで変える
 if [ -n "${NO_SHANMO_LOGO:-}" ]; then
   DEFAULT_APP_NAME="SEDITメモ"
+  DEFAULT_BUNDLE_ID="local.memocho.sedit"
   DESCRIPTION="SEDITモード搭載なつかしテキストエディタ"
 else
   DEFAULT_APP_NAME="Shanmoメモ帳"
+  DEFAULT_BUNDLE_ID="local.memocho"
   DESCRIPTION="Copyright (c) 2026 Shanmo Corp"
 fi
 APP_NAME="${APP_NAME:-$DEFAULT_APP_NAME}"
 EXEC_NAME="Memocho"
-BUNDLE_ID="${BUNDLE_ID:-local.memocho}"
+BUNDLE_ID="${BUNDLE_ID:-$DEFAULT_BUNDLE_ID}"
 BUILD_NUMBER_FILE=".build-number"
 PREVIOUS_BUILD="$(cat "$BUILD_NUMBER_FILE" 2>/dev/null || true)"
 case "$PREVIOUS_BUILD" in
   ''|*[!0-9]*) PREVIOUS_BUILD=0 ;;
 esac
-BUILD_NUMBER=$((10#$PREVIOUS_BUILD + 1))
+BUILD_NUMBER="${MEMOCHO_BUILD_NUMBER:-$((10#$PREVIOUS_BUILD + 1))}"
 VERSION="$((1 + BUILD_NUMBER / 100)).$(printf '%02d' $((BUILD_NUMBER % 100)))"
 MIN_ARM64="11.0"
 MIN_X86_64="10.15"
@@ -50,7 +73,10 @@ SWIFT_VERSION="$("$SWIFTC" --version 2>&1 | head -n 1 || true)"
 echo "==> $SWIFT_VERSION"
 
 echo "==> $APP_NAME Ver $VERSION"
-rm -rf "$BUILD_DIR"/*.app   # 名前を変えたときに前の名前のが残らんように
+if [ -z "${MEMOCHO_KEEP_APPS:-}" ]; then
+  rm -rf "$BUILD_DIR"/*.app   # 名前を変えたときに前の名前のが残らんように
+fi
+rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/ja.lproj" "$BUILD_DIR/obj"
 
 BINARIES=()
