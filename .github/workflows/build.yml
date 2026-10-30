@@ -148,7 +148,7 @@ jobs:
               --env "MEMOCHO_SCREENSHOT_SIZE=$SIZE" "$APP" || echo "$NAME: 20 秒で終わらんかった"
             ls -l "$OUT/$NAME.png" || true
           }
-          shoot sedit ~/Desktop/MEMO.TXT 688x448 "SeditMode -bool YES" "ShowLineNumbers -bool YES" "ShowColumnRuler -bool YES" "WordWrap -bool YES"
+          shoot sedit ~/Desktop/MEMO.TXT 688x420 "SeditMode -bool YES" "ShowLineNumbers -bool YES" "ShowColumnRuler -bool YES" "WordWrap -bool YES"
           shoot mac ~/Desktop/MEMO.TXT 560x380 "MonospaceMode -bool YES" "ShowLineNumbers -bool YES" "WordWrap -bool YES"
           shoot win2000 ~/Desktop/README.TXT 520x300 "ClassicUI -bool YES" "HideMacMenuBar -bool NO" "WordWrap -bool YES"
           defaults delete local.memocho >/dev/null 2>&1 || true
