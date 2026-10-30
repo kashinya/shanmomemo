@@ -126,7 +126,7 @@ final class StatusBarView: NSView {
         return [positionLabel, characterLabel, zoomLabel, lineEndingLabel, encodingLabel]
     }
 
-    /// 左はじの SHANMO ロゴ（Resources/StatusLogo.png）
+    /// 左はじの絵（アプリの中に StatusLogo.png があるときだけ。build.sh の PRIVATE=1 で入る）
     private let logoView: NSImageView? = {
         guard let image = NSImage(named: "StatusLogo"), image.size.height > 0 else { return nil }
         let height: CGFloat = 16

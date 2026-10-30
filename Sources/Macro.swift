@@ -19,7 +19,7 @@ final class MacroRecorder {
 
     /// 保存するファイルの中身
     private struct File: Codable {
-        var format = "shanmomemo-macro"
+        var format = "seditmemo-macro"
         var version = 1
         var steps: [Step]
     }
@@ -206,7 +206,8 @@ final class MacroRecorder {
 
     func load(from url: URL) throws {
         let file = try JSONDecoder().decode(File.self, from: Data(contentsOf: url))
-        guard file.format == "shanmomemo-macro" else { throw CocoaError(.fileReadCorruptFile) }
+        // 前の版で保存したマクロ（名前の頭だけちがう）も読む
+        guard file.format.hasSuffix("memo-macro") else { throw CocoaError(.fileReadCorruptFile) }
         steps = file.steps
         onStateChange?()
     }

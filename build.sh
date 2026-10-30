@@ -1,10 +1,7 @@
 #!/bin/bash
-# Shanmoメモ帳.app をビルドする（Intel / Apple シリコン両対応のユニバーサル）
-#   ./build.sh           … build/Shanmoメモ帳.app を作る
+# SEDITメモ帳.app をビルドする（Intel / Apple シリコン両対応のユニバーサル）
+#   ./build.sh           … build/SEDITメモ帳.app を作る
 #   ./build.sh install   … 作ったあと /Applications にコピー（前の名前で入れてた同じアプリは消す）
-#   NO_SHANMO_LOGO=1 ./build.sh … SHANMO なし: 名前は「SEDITメモ」、アイコンは元の紙だけ、ステータスバーにロゴを出さない
-#                                  （ID は local.memocho.sedit。Shanmoメモ帳と並べて入れられる。設定は別々）
-#   ./build.sh both             … Shanmoメモ帳 と SEDITメモ を両方作る（./build.sh install both で両方入れる。バージョンは同じ）
 # バージョンはビルドするたびに 0.01 ずつ上がる（1.01、1.02、… 1.99、2.00）。数えた回数は .build-number（git には入れない）
 #   SWIFT_OPT=-Osize ./build.sh … 速さより大きさ優先で最適化（ふつうは -O）
 #   NO_STRIP=1 ./build.sh       … 関数名などの記号を残す（ふつうは落として 3 割小さくする）
@@ -12,7 +9,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# both: SHANMO ありとなしを続けて作る。バージョンは 1 つぶんだけ進めて、両方同じにする
+# 手元だけの見た目（Resources/Private/、git に入れない）がある人向け:
+#   PRIVATE=1 ./build.sh  … Resources/Private/brand.sh の名前・説明・ID と、そこに置いたアイコン・ステータスバーの絵で作る
+#   ./build.sh both       … ふつうのと PRIVATE=1 のを両方作る（install both で両方入れる。バージョンは同じ）
 ARGS=()
 BOTH=""
 for ARG in "$@"; do
@@ -26,20 +25,26 @@ if [ -n "$BOTH" ]; then
   export MEMOCHO_BUILD_NUMBER=$((10#$NEXT_BUILD + 1))
   export MEMOCHO_KEEP_APPS=1   # 1 つめに作ったのを、2 つめのときに消さんように
   rm -rf build/*.app
-  NO_SHANMO_LOGO= "./$(basename "$0")" ${ARGS[@]+"${ARGS[@]}"}
-  NO_SHANMO_LOGO=1 "./$(basename "$0")" ${ARGS[@]+"${ARGS[@]}"}
+  PRIVATE= "./$(basename "$0")" ${ARGS[@]+"${ARGS[@]}"}
+  PRIVATE=1 "./$(basename "$0")" ${ARGS[@]+"${ARGS[@]}"}
   exit 0
 fi
 
-# 名前と説明（Finder の「情報を見る」とアプリについての説明）は、SHANMO ありなしで変える
-if [ -n "${NO_SHANMO_LOGO:-}" ]; then
-  DEFAULT_APP_NAME="SEDITメモ"
-  DEFAULT_BUNDLE_ID="local.memocho.sedit"
-  DESCRIPTION="SEDITモード搭載なつかしテキストエディタ"
-else
-  DEFAULT_APP_NAME="Shanmoメモ帳"
-  DEFAULT_BUNDLE_ID="local.memocho"
-  DESCRIPTION="Copyright (c) 2026 Shanmo Corp"
+# 名前と説明（Finder の「情報を見る」とアプリについての説明）と ID
+DEFAULT_APP_NAME="SEDITメモ帳"
+DEFAULT_BUNDLE_ID="local.memocho.sedit"
+DESCRIPTION="SEDITモード搭載なつかしテキストエディタ"
+PRIVATE_DIR="Resources/Private"
+if [ -n "${PRIVATE:-}" ]; then
+  if [ ! -f "$PRIVATE_DIR/brand.sh" ]; then
+    echo "PRIVATE=1 には $PRIVATE_DIR/brand.sh が要る（BRAND_NAME・BRAND_DESCRIPTION・BRAND_BUNDLE_ID を書く）" >&2
+    exit 1
+  fi
+  # shellcheck source=/dev/null
+  . "$PRIVATE_DIR/brand.sh"
+  DEFAULT_APP_NAME="${BRAND_NAME:-$DEFAULT_APP_NAME}"
+  DEFAULT_BUNDLE_ID="${BRAND_BUNDLE_ID:-$DEFAULT_BUNDLE_ID}"
+  DESCRIPTION="${BRAND_DESCRIPTION:-$DESCRIPTION}"
 fi
 APP_NAME="${APP_NAME:-$DEFAULT_APP_NAME}"
 EXEC_NAME="Memocho"
@@ -103,13 +108,17 @@ for ARCH in $ARCHS; do
 done
 
 lipo -create -output "$APP/Contents/MacOS/$EXEC_NAME" "${BINARIES[@]}"
-# SHANMO のロゴ（アイコンの紙とステータスバーの左はじ）。ステータスバーは StatusLogo.png が無ければ出さない
-if [ -n "${NO_SHANMO_LOGO:-}" ]; then
-  echo "==> SHANMO のロゴなし"
-  cp Resources/AppIcon-plain.icns "$APP/Contents/Resources/AppIcon.icns"
-else
-  cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-  cp Resources/StatusLogo.png "$APP/Contents/Resources/StatusLogo.png"
+# アイコン。PRIVATE=1 で Resources/Private/ にアイコン（AppIcon.icns）とステータスバーの左はじの絵（StatusLogo.png）が
+# あればそれを使う。ステータスバーの絵は無ければ出さない
+cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
+if [ -n "${PRIVATE:-}" ]; then
+  echo "==> 手元だけの見た目: $APP_NAME"
+  if [ -f "$PRIVATE_DIR/AppIcon.icns" ]; then
+    cp "$PRIVATE_DIR/AppIcon.icns" "$APP/Contents/Resources/AppIcon.icns"
+  fi
+  if [ -f "$PRIVATE_DIR/StatusLogo.png" ]; then
+    cp "$PRIVATE_DIR/StatusLogo.png" "$APP/Contents/Resources/StatusLogo.png"
+  fi
 fi
 
 # 等幅フォントモード用の PC-9800 フォント（retro-type.com の配布物）。
@@ -214,7 +223,7 @@ echo "==> できた: ${APP}（Ver ${VERSION}）"
 if [ "${1:-}" = "install" ]; then
   DEST="/Applications/$APP_NAME.app"
   LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
-  # 前の名前（メモ帳.app、SHANMO ありなしの切り替え）で入れてた同じアプリ（同じ ID）は消す。2 つあると関連付けが迷う
+  # 前の名前で入れてた同じアプリ（同じ ID）は消す。2 つあると関連付けが迷う
   for OTHER in /Applications/*.app; do
     [ "$OTHER" = "$DEST" ] && continue
     OTHER_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$OTHER/Contents/Info.plist" 2>/dev/null || true)"
