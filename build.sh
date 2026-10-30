@@ -42,8 +42,15 @@ if [ -n "${PRIVATE:-}" ]; then
   fi
   # shellcheck source=/dev/null
   . "$PRIVATE_DIR/brand.sh"
-  DEFAULT_APP_NAME="${BRAND_NAME:-$DEFAULT_APP_NAME}"
-  DEFAULT_BUNDLE_ID="${BRAND_BUNDLE_ID:-$DEFAULT_BUNDLE_ID}"
+  : "${BRAND_NAME:?$PRIVATE_DIR/brand.sh に BRAND_NAME が要る}"
+  : "${BRAND_BUNDLE_ID:?$PRIVATE_DIR/brand.sh に BRAND_BUNDLE_ID が要る}"
+  # ふつうのと同じ名前や ID やと、install both で先に入れたふつうのを「前の名前のアプリ」として消してしまう
+  if [ "$BRAND_NAME" = "$DEFAULT_APP_NAME" ] || [ "$BRAND_BUNDLE_ID" = "$DEFAULT_BUNDLE_ID" ]; then
+    echo "$PRIVATE_DIR/brand.sh の BRAND_NAME と BRAND_BUNDLE_ID は、ふつうの（$DEFAULT_APP_NAME / $DEFAULT_BUNDLE_ID）とちがうものにする" >&2
+    exit 1
+  fi
+  DEFAULT_APP_NAME="$BRAND_NAME"
+  DEFAULT_BUNDLE_ID="$BRAND_BUNDLE_ID"
   DESCRIPTION="${BRAND_DESCRIPTION:-$DESCRIPTION}"
 fi
 APP_NAME="${APP_NAME:-$DEFAULT_APP_NAME}"
@@ -151,6 +158,13 @@ done
 shopt -u nocaseglob
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
+# Info.plist に入れる文字は XML として逃がす（brand.sh の説明に & や < があっても壊れんように）
+xml_escape() {
+  printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'
+}
+PLIST_APP_NAME="$(xml_escape "$APP_NAME")"
+PLIST_DESCRIPTION="$(xml_escape "$DESCRIPTION")"
+PLIST_BUNDLE_ID="$(xml_escape "$BUNDLE_ID")"
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -163,13 +177,13 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <string>ja</string>
   </array>
   <key>CFBundleName</key>
-  <string>$APP_NAME</string>
+  <string>$PLIST_APP_NAME</string>
   <key>CFBundleDisplayName</key>
-  <string>$APP_NAME</string>
+  <string>$PLIST_APP_NAME</string>
   <key>CFBundleExecutable</key>
   <string>$EXEC_NAME</string>
   <key>CFBundleIdentifier</key>
-  <string>$BUNDLE_ID</string>
+  <string>$PLIST_BUNDLE_ID</string>
   <key>CFBundleIconFile</key>
   <string>AppIcon</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -181,7 +195,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key>
   <string>$BUILD_NUMBER</string>
   <key>NSHumanReadableCopyright</key>
-  <string>$DESCRIPTION</string>
+  <string>$PLIST_DESCRIPTION</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_X86_64</string>
   <key>LSApplicationCategoryType</key>

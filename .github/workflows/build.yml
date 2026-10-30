@@ -35,6 +35,7 @@ jobs:
           APP="$(ls -d build/*.app)"
           echo "$APP"
           [ "$(basename "$APP")" = "SEDITメモ帳.app" ] || { echo "::error::名前が SEDITメモ帳 になってない: $APP" >&2; exit 1; }
+          if [ -e "$APP/Contents/Resources/StatusLogo.png" ]; then echo "::error::ふつうのビルドに StatusLogo.png が入ってる" >&2; exit 1; fi
           ARCHS_FOUND="$(lipo -archs "$APP/Contents/MacOS/Memocho")"
           echo "$ARCHS_FOUND"
           for ARCH in arm64 x86_64; do
@@ -106,13 +107,16 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p Resources/Private
-          printf 'BRAND_NAME="CIテスト"\nBRAND_DESCRIPTION="CI test"\nBRAND_BUNDLE_ID="local.memocho.citest"\n' > Resources/Private/brand.sh
+          printf 'BRAND_NAME="CIテスト"\nBRAND_DESCRIPTION="CI test & <escape>"\nBRAND_BUNDLE_ID="local.memocho.citest"\n' > Resources/Private/brand.sh
           cp docs/sedit.png Resources/Private/StatusLogo.png
+          # アイコンの差し替えも確かめる（中身はふつうのを 1 バイト変えたもの）
+          python3 -c 'import sys; d=bytearray(open("Resources/AppIcon.icns","rb").read()); d[-1]^=1; open("Resources/Private/AppIcon.icns","wb").write(d)'
           ./build.sh 2>&1 | tee build.log
           APP="build/CIテスト.app"
+          cmp "$APP/Contents/Resources/AppIcon.icns" Resources/Private/AppIcon.icns
           [ -d "$APP" ] || { echo "::error::PRIVATE=1 で名前が brand.sh のになってない" >&2; ls build; exit 1; }
           [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "local.memocho.citest" ]
-          [ "$(/usr/libexec/PlistBuddy -c 'Print :NSHumanReadableCopyright' "$APP/Contents/Info.plist")" = "CI test" ]
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :NSHumanReadableCopyright' "$APP/Contents/Info.plist")" = "CI test & <escape>" ]
           [ -f "$APP/Contents/Resources/StatusLogo.png" ] || { echo "::error::StatusLogo.png が入ってない" >&2; exit 1; }
           codesign --verify --strict --verbose=1 "$APP"
           rm -rf Resources/Private

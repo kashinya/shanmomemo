@@ -79,7 +79,7 @@ final class StatusBarView: NSView {
 
     private static let labelFont = NSFont.systemFont(ofSize: 11)
 
-    /// 欄の幅は、それぞれ出しうるいちばん長い表示に合わせて詰めてある（文字数を出さなければ、本文 500pt 幅でも左はじにロゴが入る）
+    /// 欄の幅は、それぞれ出しうるいちばん長い表示に合わせて詰めてある（文字数を出さなければ、本文 500pt 幅でも左はじに絵が入る）
     private static func columnWidth(_ samples: [String]) -> CGFloat {
         let attributes: [NSAttributedString.Key: Any] = [.font: StatusBarView.labelFont]
         let widest = samples.map { ($0 as NSString).size(withAttributes: attributes).width }.max() ?? 0
@@ -161,7 +161,7 @@ final class StatusBarView: NSView {
             x -= column.width
             column.label.frame = NSRect(x: x + 10, y: 3, width: column.width - 14, height: 16)
         }
-        // ウィンドウが狭くて欄とぶつかるときはロゴを隠す
+        // ウィンドウが狭くて欄とぶつかるときは左はじの絵を隠す
         if let logoView = logoView {
             logoView.isHidden = logoView.frame.maxX + 8 > x
         }
@@ -170,7 +170,7 @@ final class StatusBarView: NSView {
 
     override var isOpaque: Bool { return true }
 
-    /// 上が y = 0（ラベルとロゴは上下の真ん中なので、どっち向きでも同じ位置）
+    /// 上が y = 0（ラベルと絵は上下の真ん中なので、どっち向きでも同じ位置）
     override var isFlipped: Bool { return true }
 
     /// Windows 2000 風: ボタン色の地に、へこんだ欄を並べる

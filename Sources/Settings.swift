@@ -159,7 +159,7 @@ final class Settings {
         set { defaults.set(Array(newValue.prefix(10)), forKey: Key.recentFiles) }
     }
 
-    /// 隠し設定: 変換候補の窓の位置を調べるため、IME とのやりとりを ~/Library/Logs/local.memocho-ime.log に書く
+    /// 隠し設定: 変換候補の窓の位置を調べるため、IME とのやりとりを ~/Library/Logs/local.memocho.sedit-ime.log に書く
     var imeLog: Bool {
         return defaults.bool(forKey: Key.imeLog)
     }
@@ -267,7 +267,7 @@ final class Settings {
         set { defaults.set(newValue, forKey: Key.wrapAround) }
     }
 
-    /// 隠し設定: defaults write local.memocho TabWidth -int 4
+    /// 隠し設定: defaults write local.memocho.sedit TabWidth -int 4
     var tabWidth: Int {
         let width = defaults.integer(forKey: Key.tabWidth)
         return (1...32).contains(width) ? width : 8

@@ -257,8 +257,8 @@ final class EditorTextView: NSTextView {
     }
 }
 
-/// 隠し設定（defaults write local.memocho IMELog -bool YES）のときだけ、IME とのやりとりを
-/// ~/Library/Logs/local.memocho-ime.log に書く。変換候補の窓の位置を調べる用。1MB を超えたら空にして書き直す
+/// 隠し設定（defaults write local.memocho.sedit IMELog -bool YES）のときだけ、IME とのやりとりを
+/// ~/Library/Logs/local.memocho.sedit-ime.log に書く。変換候補の窓の位置を調べる用。1MB を超えたら空にして書き直す
 enum IMELog {
     static var isEnabled: Bool {
         return Settings.shared.imeLog
