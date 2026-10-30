@@ -51,13 +51,14 @@ final class EditorTextView: NSTextView {
     /// 普通の答えはそのまま返し、おかしいときだけ詰める
     override func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
         let answer = clampedFirstRect(forCharacterRange: range, actualRange: actualRange)
-        IMELog.write("firstRect query=\(NSStringFromRange(range)) answer=\(NSStringFromRect(answer.rect))"
-                     + " appkit=\(NSStringFromRect(answer.appKit)) \(imeState)")
+        IMELog.write("firstRect query=\(NSStringFromRange(range)) asked=\(NSStringFromRange(answer.query))"
+                     + " answer=\(NSStringFromRect(answer.rect)) appkit=\(NSStringFromRect(answer.appKit))"
+                     + " actual=\(actualRange.map { NSStringFromRange($0.pointee) } ?? "-") \(imeState)")
         return answer.rect
     }
 
-    /// appKit: NSTextView そのままの答え（記録用）
-    private func clampedFirstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> (rect: NSRect, appKit: NSRect) {
+    /// query: NSTextView に聞いた範囲（変換中の字の終わりで切ったあと）、appKit: その答え（記録用）
+    private func clampedFirstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> (rect: NSRect, appKit: NSRect, query: NSRange) {
         var query = range
         if hasMarkedText(), query.location != NSNotFound {
             let marked = markedRange()
@@ -69,15 +70,15 @@ final class EditorTextView: NSTextView {
         let rect = super.firstRect(forCharacterRange: query, actualRange: actualRange)
         guard rect.origin.x.isFinite, rect.origin.y.isFinite, rect.width.isFinite, rect.height.isFinite else {
             let caret = query.location == NSNotFound ? selectedRange().location : query.location
-            return (super.firstRect(forCharacterRange: NSRange(location: caret, length: 0), actualRange: actualRange), rect)
+            return (super.firstRect(forCharacterRange: NSRange(location: caret, length: 0), actualRange: actualRange), rect, query)
         }
-        guard let window = window else { return (rect, rect) }
+        guard let window = window else { return (rect, rect, query) }
         let visible = window.convertToScreen(convert(visibleRect, to: nil))
-        guard !visible.isEmpty, rect.maxX > visible.maxX + 1 else { return (rect, rect) }   // 普通はここで帰る
+        guard !visible.isEmpty, rect.maxX > visible.maxX + 1 else { return (rect, rect, query) }   // 普通はここで帰る
         var fixed = rect
         fixed.origin.x = min(max(rect.minX, visible.minX), visible.maxX - 1)
         fixed.size.width = max(0, min(rect.maxX, visible.maxX) - fixed.minX)
-        return (fixed, rect)
+        return (fixed, rect, query)
     }
 
     // 変換候補の窓がまだ飛ぶので、IME とのやりとりを記録して調べる（IMELog がオンのときだけ）
@@ -283,9 +284,9 @@ enum IMELog {
             try? manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             manager.createFile(atPath: url.path, contents: nil)
         }
-        guard let handle = try? FileHandle(forWritingTo: url) else { return }
-        handle.seekToEndOfFile()
-        handle.write(data)
-        handle.closeFile()
+        // FileHandle の write はディスクがいっぱいのとき例外で落ちるので、C の fopen で足す（書けんかったら黙って捨てる）
+        guard let file = fopen(url.path, "a") else { return }
+        _ = data.withUnsafeBytes { fwrite($0.baseAddress, 1, $0.count, file) }
+        fclose(file)
     }
 }

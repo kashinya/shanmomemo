@@ -13,8 +13,9 @@ final class FixedLineHeightDelegate: NSObject, NSLayoutManagerDelegate {
     /// spacing: 行間の倍率（［書式］→［行間］）。広げた分は行の上と下に半分ずつ
     func update(for font: NSFont, layoutManager: NSLayoutManager, spacing: CGFloat = 1) {
         let natural = layoutManager.defaultLineHeight(for: font)
-        // 広げるときは整数に丸める（PC-9800 フォントのドットがピクセルからずれんように）
-        lineHeight = spacing == 1 ? natural : (natural * spacing).rounded()
+        // 広げるときは整数に切り下げる（PC-9800 フォントのドットがピクセルからずれんように）。四捨五入やと 16 ドットの行で
+        // 1.1 倍と 1.15 倍がどっちも 18 になってたので、切り下げて 17・18・19・20・24・32 と全部ちがう高さにする
+        lineHeight = spacing == 1 ? natural : max(natural, (natural * spacing + 0.001).rounded(.down))
         baselineOffset = layoutManager.defaultBaselineOffset(for: font) + ((lineHeight - natural) / 2).rounded(.down)
     }
 

@@ -1183,8 +1183,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             NSSound.beep()
             return
         }
-        guard let fileMenu = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "ファイル" })?.submenu,
-              let menu = fileMenu.copy() as? NSMenu else { return }
+        guard let fileMenu = NSApp.mainMenu?.items.first(where: { $0.submenu?.title == "ファイル" })?.submenu else { return }
+        let menu = fileMenu.copyKeepingDelegates()
         let rect = functionBar.itemRect(4)
         menu.popUp(positioning: nil, at: NSPoint(x: rect.minX, y: rect.minY), in: functionBar)
     }

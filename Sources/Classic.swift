@@ -473,7 +473,7 @@ final class ClassicMenuBar: NSView {
         hotIndex = nil
         display()
         // メインメニューに付いてるメニューをそのまま出すと取り合いになるので、写しを出す
-        let menu = (item.menu.copy() as? NSMenu) ?? item.menu
+        let menu = item.menu.copyKeepingDelegates()
         menu.popUp(positioning: nil, at: NSPoint(x: item.rect.minX, y: item.rect.maxY), in: self)
         openIndex = nil
         needsDisplay = true
@@ -692,5 +692,24 @@ final class ClassicScrollBar: NSView {
         }
         clipView.scroll(to: origin)
         scrollView.reflectScrolledClipView(clipView)
+    }
+}
+
+extension NSMenu {
+    /// 写しを出すとき用。NSMenu の copy は中のメニューの delegate を写さんことがあるので付け直す
+    /// （［最近使ったファイル］は delegate が開くたびに作り直すので、無いと写しが空や古いままになる）
+    func copyKeepingDelegates() -> NSMenu {
+        guard let copied = copy() as? NSMenu else { return self }
+        NSMenu.relinkDelegates(from: self, to: copied)
+        return copied
+    }
+
+    private static func relinkDelegates(from original: NSMenu, to copied: NSMenu) {
+        copied.delegate = original.delegate
+        for (item, copiedItem) in zip(original.items, copied.items) {
+            if let submenu = item.submenu, let copiedSubmenu = copiedItem.submenu, copiedSubmenu !== submenu {
+                relinkDelegates(from: submenu, to: copiedSubmenu)
+            }
+        }
     }
 }
