@@ -453,8 +453,20 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     @objc private func clipViewFrameDidChange(_ notification: Notification) {
+        matchTextViewWidthToVisibleArea()
         updateTextViewMinSize()
         updateSeditWrapWidth()
+    }
+
+    /// 折り返すとき: 本文の View の幅を、見えてるところの幅にきっちりそろえる。
+    /// NSScrollView がルーラーのぶん本文を狭めたあとで、EditorScrollView がクリップビューも狭めるので、自動の伸び縮みだけやと
+    /// ルーラーの幅を二重に引いてた（CI で測った: 見えてる幅 468 に本文 436。SEDIT 風は折り返しの幅 460 なので右が 24pt 切れてた）
+    private func matchTextViewWidthToVisibleArea() {
+        guard Settings.shared.wordWrap else { return }
+        let width = visibleTextSize.width
+        if textView.frame.width != width {
+            textView.setFrameSize(NSSize(width: width, height: textView.frame.height))
+        }
     }
 
     /// SEDIT 風で折り返すとき: 右端に改行の ↓ が入る 1 桁を残して折り返す
