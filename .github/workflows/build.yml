@@ -159,8 +159,8 @@ jobs:
           shoot wrap-sedit-nonum ~/Desktop/LONG.TXT 500x300 "SeditMode -bool YES" "WordWrap -bool YES"
           # 折り返すときは、本文の幅が見えてる幅（クリップビュー）とそろってるか
           for NAME in wrap-mac wrap-sedit wrap-sedit-nonum; do
-            CLIP="$(grep -o 'clip.frame ([^)]*)' "$OUT/$NAME.log" | awk -F'[(), ]+' '{print $5}')"
-            TEXT="$(grep -o 'textView.frame ([^)]*)' "$OUT/$NAME.log" | awk -F'[(), ]+' '{print $5}')"
+            CLIP="$(grep -o 'clip.frame ([^)]*)' "$OUT/$NAME.log" | awk -F'[(), ]+' '{print $4}')"
+            TEXT="$(grep -o 'textView.frame ([^)]*)' "$OUT/$NAME.log" | awk -F'[(), ]+' '{print $4}')"
             if [ "$CLIP" = "$TEXT" ]; then echo "$NAME: 本文の幅 $TEXT = 見えてる幅 $CLIP"; else echo "::error::$NAME: 本文の幅 $TEXT と見えてる幅 $CLIP がちがう"; fi
           done
           defaults delete local.memocho >/dev/null 2>&1 || true
