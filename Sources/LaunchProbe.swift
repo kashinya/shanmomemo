@@ -10,14 +10,44 @@ enum LaunchProbe {
         FileHandle.standardError.write(String(format: "launch-probe %@: %.1f\n", stage, elapsedMilliseconds()).data(using: .utf8)!)
     }
 
-    static func windowShown(_ window: NSWindow) {
+    static func windowShown(_ controller: EditorWindowController) {
         guard isEnabled else { return }
+        let window = controller.window
         window.displayIfNeeded()
         mark("window")
-        if ProcessInfo.processInfo.environment["MEMOCHO_PROBE_GEOMETRY"] != nil, let content = window.contentView {
+        let environment = ProcessInfo.processInfo.environment
+        if environment["MEMOCHO_PROBE_GEOMETRY"] != nil, let content = window.contentView {
             dumpScrollGeometry(in: content)
         }
+        if let output = environment["MEMOCHO_SCREENSHOT"] {
+            takeScreenshot(of: controller, to: output, environment: environment)
+        }
         exit(0)
+    }
+
+    /// README の画面写真用（CI）: MEMOCHO_SCREENSHOT_TEXT のファイルを開いて、本文の大きさを MEMOCHO_SCREENSHOT_SIZE（幅x高さ）にし、
+    /// ウィンドウをそのまま PNG にする。アプリが自分で描くので、画面収録の許可は要らん
+    private static func takeScreenshot(of controller: EditorWindowController, to output: String, environment: [String: String]) {
+        let window = controller.window
+        if let size = environment["MEMOCHO_SCREENSHOT_SIZE"]?.split(separator: "x").compactMap({ Double($0) }), size.count == 2 {
+            window.setContentSize(NSSize(width: size[0], height: size[1]))
+        }
+        if let text = environment["MEMOCHO_SCREENSHOT_TEXT"] {
+            controller.load(URL(fileURLWithPath: text), encoding: nil)
+        }
+        window.layoutIfNeeded()
+        window.displayIfNeeded()
+        // タイトルバーまで入れる（枠なしの Windows 2000 風は、中身の View がウィンドウ全体）
+        guard let view = window.contentView?.superview ?? window.contentView,
+              let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+            mark("screenshot-failed")
+            return
+        }
+        view.cacheDisplay(in: view.bounds, to: bitmap)
+        if let png = bitmap.representation(using: .png, properties: [:]) {
+            try? png.write(to: URL(fileURLWithPath: output))
+            mark("screenshot")
+        }
     }
 
     /// ルーラーと本文の並び方を出す（CI で、ルーラーが本文に重なるかを調べる）

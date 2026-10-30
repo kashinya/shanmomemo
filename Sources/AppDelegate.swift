@@ -169,7 +169,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         controllers.append(controller)
         controller.window.makeKeyAndOrderFront(nil)
         controller.window.makeFirstResponder(controller.textView)
-        LaunchProbe.windowShown(controller.window)
+        LaunchProbe.windowShown(controller)
         return controller
     }
 

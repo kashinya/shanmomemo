@@ -130,6 +130,35 @@ jobs:
             echo "::warning::PC-9800 フォントが埋め込まれてない（retro-type.com から取れなかった？）"
           fi
 
+      # README の画面写真（PC-9800 フォント込みのビルドで、アプリが自分のウィンドウを PNG にする）。アーティファクトにだけ置く
+      - name: Screenshots
+        continue-on-error: true
+        timeout-minutes: 5
+        run: |
+          APP="$(ls -d build/*.app)"
+          OUT="$RUNNER_TEMP/screenshots"
+          mkdir -p "$OUT" ~/Desktop
+          cp tools/screenshot/MEMO.TXT tools/screenshot/README.TXT ~/Desktop/
+          shoot() {
+            NAME="$1"; TEXT="$2"; SIZE="$3"; shift 3
+            defaults delete local.memocho >/dev/null 2>&1 || true
+            for SETTING in "$@"; do defaults write local.memocho $SETTING; done
+            perl -e 'alarm shift; exec @ARGV' 20 open -W -n -F --env MEMOCHO_LAUNCH_PROBE=1 \
+              --env "MEMOCHO_SCREENSHOT=$OUT/$NAME.png" --env "MEMOCHO_SCREENSHOT_TEXT=$TEXT" \
+              --env "MEMOCHO_SCREENSHOT_SIZE=$SIZE" "$APP" || echo "$NAME: 20 秒で終わらんかった"
+            ls -l "$OUT/$NAME.png" || true
+          }
+          shoot sedit ~/Desktop/MEMO.TXT 688x448 "SeditMode -bool YES" "ShowLineNumbers -bool YES" "ShowColumnRuler -bool YES" "WordWrap -bool YES"
+          shoot mac ~/Desktop/MEMO.TXT 560x380 "MonospaceMode -bool YES" "ShowLineNumbers -bool YES" "WordWrap -bool YES"
+          shoot win2000 ~/Desktop/README.TXT 520x300 "ClassicUI -bool YES" "HideMacMenuBar -bool NO" "WordWrap -bool YES"
+          defaults delete local.memocho >/dev/null 2>&1 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: ${{ runner.temp }}/screenshots
+          if-no-files-found: warn
+
       - name: Post compiler errors to PR
         if: failure() && github.event_name == 'pull_request'
         env:
