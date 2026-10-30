@@ -16,11 +16,12 @@ enum LaunchProbe {
         window.displayIfNeeded()
         mark("window")
         let environment = ProcessInfo.processInfo.environment
-        if environment["MEMOCHO_PROBE_GEOMETRY"] != nil, let content = window.contentView {
-            dumpScrollGeometry(in: content)
-        }
         if let output = environment["MEMOCHO_SCREENSHOT"] {
             takeScreenshot(of: controller, to: output, environment: environment)
+        }
+        // 写真を撮るときは、文書を開いて大きさを変えたあとの並び方を出す
+        if environment["MEMOCHO_PROBE_GEOMETRY"] != nil, let content = window.contentView {
+            dumpScrollGeometry(in: content)
         }
         exit(0)
     }
@@ -59,7 +60,15 @@ enum LaunchProbe {
                 "clip.frame \(clip.frame) bounds \(clip.bounds)",
                 "automaticallyAdjustsContentInsets \(scrollView.automaticallyAdjustsContentInsets) contentInsets \(clip.contentInsets)",
                 "documentVisibleRect \(scrollView.documentVisibleRect) document.frame \(scrollView.documentView?.frame ?? .zero)",
+                "contentSize \(scrollView.contentSize) hasVerticalScroller \(scrollView.hasVerticalScroller) scrollerStyle \(scrollView.scrollerStyle.rawValue) verticalScroller.frame \(scrollView.verticalScroller?.frame ?? .zero)",
             ]
+            if let textView = scrollView.documentView as? NSTextView, let container = textView.textContainer,
+               let layoutManager = textView.layoutManager {
+                layoutManager.ensureLayout(for: container)
+                lines.append("textView.frame \(textView.frame) autoresizing \(textView.autoresizingMask.rawValue) horizontallyResizable \(textView.isHorizontallyResizable)")
+                lines.append("container.size \(container.size) widthTracksTextView \(container.widthTracksTextView) inset \(textView.textContainerInset) padding \(container.lineFragmentPadding)")
+                lines.append("usedRect \(layoutManager.usedRect(for: container)) textContainerOrigin \(textView.textContainerOrigin)")
+            }
             for ruler in [scrollView.verticalRulerView, scrollView.horizontalRulerView].compactMap({ $0 }) {
                 lines.append("ruler \(ruler.orientation == .verticalRuler ? "vertical" : "horizontal") frame \(ruler.frame) superview \(ruler.superview.map { String(describing: type(of: $0)) } ?? "nil") hidden \(ruler.isHidden) thickness \(ruler.ruleThickness)")
             }

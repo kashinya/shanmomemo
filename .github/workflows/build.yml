@@ -138,19 +138,25 @@ jobs:
           APP="$(ls -d build/*.app)"
           OUT="$RUNNER_TEMP/screenshots"
           mkdir -p "$OUT" ~/Desktop
-          cp tools/screenshot/MEMO.TXT tools/screenshot/README.TXT ~/Desktop/
+          cp tools/screenshot/MEMO.TXT tools/screenshot/README.TXT tools/screenshot/LONG.TXT ~/Desktop/
           shoot() {
             NAME="$1"; TEXT="$2"; SIZE="$3"; shift 3
             defaults delete local.memocho >/dev/null 2>&1 || true
             for SETTING in "$@"; do defaults write local.memocho $SETTING; done
             perl -e 'alarm shift; exec @ARGV' 20 open -W -n -F --env MEMOCHO_LAUNCH_PROBE=1 \
               --env "MEMOCHO_SCREENSHOT=$OUT/$NAME.png" --env "MEMOCHO_SCREENSHOT_TEXT=$TEXT" \
-              --env "MEMOCHO_SCREENSHOT_SIZE=$SIZE" "$APP" || echo "$NAME: 20 秒で終わらんかった"
+              --env "MEMOCHO_SCREENSHOT_SIZE=$SIZE" --env MEMOCHO_PROBE_GEOMETRY=1 \
+              --stderr "$OUT/$NAME.log" "$APP" || echo "$NAME: 20 秒で終わらんかった"
             ls -l "$OUT/$NAME.png" || true
+            grep geometry "$OUT/$NAME.log" | sed "s/^/$NAME /" || true
           }
           shoot sedit ~/Desktop/MEMO.TXT 688x420 "SeditMode -bool YES" "ShowLineNumbers -bool YES" "ShowColumnRuler -bool YES" "WordWrap -bool YES"
           shoot mac ~/Desktop/MEMO.TXT 560x380 "MonospaceMode -bool YES" "ShowLineNumbers -bool YES" "WordWrap -bool YES"
           shoot win2000 ~/Desktop/README.TXT 520x300 "ClassicUI -bool YES" "HideMacMenuBar -bool NO" "WordWrap -bool YES"
+          # 折り返しで右が切れんか（長い行・行番号・桁ルーラー）
+          shoot wrap-mac ~/Desktop/LONG.TXT 500x300 "WordWrap -bool YES" "ShowLineNumbers -bool YES" "ShowColumnRuler -bool YES"
+          shoot wrap-sedit ~/Desktop/LONG.TXT 500x300 "SeditMode -bool YES" "WordWrap -bool YES" "ShowLineNumbers -bool YES" "ShowColumnRuler -bool YES"
+          shoot wrap-sedit-nonum ~/Desktop/LONG.TXT 500x300 "SeditMode -bool YES" "WordWrap -bool YES"
           defaults delete local.memocho >/dev/null 2>&1 || true
 
       - uses: actions/upload-artifact@v4

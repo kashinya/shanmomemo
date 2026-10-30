@@ -1,0 +1,3 @@
+■ 長い行の折り返しの見本。右の端で切れずに折り返すかどうかを確かめるための、わざと長くした行です。■ 長い行の折り返しの見本。右の端で切れずに折り返すかどうかを確かめるための、わざと長くした行です。
+ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 ABCDEFGHIJKLMNOPQRSTUVWXYZ abcdefghijklmnopqrstuvwxyz 0123456789 
+売上100億（営業利益7億）、社員100人、店舗数5。自社の何に何割効いたか、他社へ乗り換えてしまう理由も書く。
