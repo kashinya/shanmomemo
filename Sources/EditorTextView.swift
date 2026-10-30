@@ -50,6 +50,14 @@ final class EditorTextView: NSTextView {
     /// 改行まで含めた問い合わせが来ると、四角が画面の外まで伸びて、候補の窓（2 回目のスペースで出る一覧）が画面の右端へ飛んでた。
     /// 普通の答えはそのまま返し、おかしいときだけ詰める
     override func firstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> NSRect {
+        let answer = clampedFirstRect(forCharacterRange: range, actualRange: actualRange)
+        IMELog.write("firstRect query=\(NSStringFromRange(range)) answer=\(NSStringFromRect(answer.rect))"
+                     + " appkit=\(NSStringFromRect(answer.appKit)) \(imeState)")
+        return answer.rect
+    }
+
+    /// appKit: NSTextView そのままの答え（記録用）
+    private func clampedFirstRect(forCharacterRange range: NSRange, actualRange: NSRangePointer?) -> (rect: NSRect, appKit: NSRect) {
         var query = range
         if hasMarkedText(), query.location != NSNotFound {
             let marked = markedRange()
@@ -61,15 +69,42 @@ final class EditorTextView: NSTextView {
         let rect = super.firstRect(forCharacterRange: query, actualRange: actualRange)
         guard rect.origin.x.isFinite, rect.origin.y.isFinite, rect.width.isFinite, rect.height.isFinite else {
             let caret = query.location == NSNotFound ? selectedRange().location : query.location
-            return super.firstRect(forCharacterRange: NSRange(location: caret, length: 0), actualRange: actualRange)
+            return (super.firstRect(forCharacterRange: NSRange(location: caret, length: 0), actualRange: actualRange), rect)
         }
-        guard let window = window else { return rect }
+        guard let window = window else { return (rect, rect) }
         let visible = window.convertToScreen(convert(visibleRect, to: nil))
-        guard !visible.isEmpty, rect.maxX > visible.maxX + 1 else { return rect }   // 普通はここで帰る
+        guard !visible.isEmpty, rect.maxX > visible.maxX + 1 else { return (rect, rect) }   // 普通はここで帰る
         var fixed = rect
         fixed.origin.x = min(max(rect.minX, visible.minX), visible.maxX - 1)
         fixed.size.width = max(0, min(rect.maxX, visible.maxX) - fixed.minX)
-        return fixed
+        return (fixed, rect)
+    }
+
+    // 変換候補の窓がまだ飛ぶので、IME とのやりとりを記録して調べる（IMELog がオンのときだけ）
+    override func characterIndex(for point: NSPoint) -> Int {
+        let index = super.characterIndex(for: point)
+        IMELog.write("characterIndex point=\(NSStringFromPoint(point)) answer=\(index) \(imeState)")
+        return index
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+        let text = (string as? String) ?? (string as? NSAttributedString)?.string ?? ""
+        IMELog.write("setMarkedText \"\(text)\" selected=\(NSStringFromRange(selectedRange)) \(imeState)")
+    }
+
+    override func unmarkText() {
+        super.unmarkText()
+        IMELog.write("unmarkText \(imeState)")
+    }
+
+    /// 記録用: 変換中の字・選択・見えてるところ（画面の座標）・ウィンドウ・マウスの位置・折り返し
+    private var imeState: String {
+        guard IMELog.isEnabled else { return "" }
+        let visible = window.map { NSStringFromRect($0.convertToScreen(convert(visibleRect, to: nil))) } ?? "-"
+        return "marked=\(NSStringFromRange(markedRange())) selected=\(NSStringFromRange(selectedRange()))"
+            + " visible=\(visible) window=\(window.map { NSStringFromRect($0.frame) } ?? "-")"
+            + " mouse=\(NSStringFromPoint(NSEvent.mouseLocation)) wrap=\(Settings.shared.wordWrap) sedit=\(Settings.shared.seditMode)"
     }
 
     // MARK: - SEDIT 風の印
@@ -218,5 +253,39 @@ final class EditorTextView: NSTextView {
         if event.phase == .ended || event.phase == .cancelled {
             pinchAccumulator = 0
         }
+    }
+}
+
+/// 隠し設定（defaults write local.memocho IMELog -bool YES）のときだけ、IME とのやりとりを
+/// ~/Library/Logs/local.memocho-ime.log に書く。変換候補の窓の位置を調べる用。1MB を超えたら空にして書き直す
+enum IMELog {
+    static var isEnabled: Bool {
+        return Settings.shared.imeLog
+    }
+
+    private static var fileURL: URL? {
+        guard let library = FileManager.default.urls(for: .libraryDirectory, in: .userDomainMask).first else { return nil }
+        return library.appendingPathComponent("Logs", isDirectory: true)
+            .appendingPathComponent("\(Bundle.main.bundleIdentifier ?? "local.memocho")-ime.log")
+    }
+
+    private static let formatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "HH:mm:ss.SSS"
+        return formatter
+    }()
+
+    static func write(_ line: String) {
+        guard isEnabled, let url = fileURL, let data = "\(formatter.string(from: Date())) \(line)\n".data(using: .utf8) else { return }
+        let manager = FileManager.default
+        let size = (try? manager.attributesOfItem(atPath: url.path))?[.size] as? Int
+        if size.map({ $0 > 1_000_000 }) ?? true {
+            try? manager.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            manager.createFile(atPath: url.path, contents: nil)
+        }
+        guard let handle = try? FileHandle(forWritingTo: url) else { return }
+        handle.seekToEndOfFile()
+        handle.write(data)
+        handle.closeFile()
     }
 }

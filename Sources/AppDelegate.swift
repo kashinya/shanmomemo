@@ -257,6 +257,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         open(choice.url, encoding: choice.encoding)
     }
 
+    /// ［最近使ったファイル］も、ウィンドウが 1 枚も無いときだけここに来る
+    @objc func openRecentFile(_ sender: Any?) {
+        guard let path = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        guard FileManager.default.fileExists(atPath: path) else {
+            RecentFiles.forget(URL(fileURLWithPath: path))
+            NSSound.beep()
+            return
+        }
+        open(URL(fileURLWithPath: path), encoding: nil)
+    }
+
     /// ［iCloud Drive から開く…］も、ウィンドウが 1 枚も無いときだけここに来る
     @objc func fileOpenFromICloud(_ sender: Any?) {
         guard let choice = FilePanels.runOpen(directory: FilePanels.iCloudDrive) else { return }
@@ -441,18 +452,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
     }
 
+    /// 名前・バージョン・説明（Info.plist の NSHumanReadableCopyright。build.sh が SHANMO ありなしで変える）
     @objc func showAbout(_ sender: Any?) {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .center
-        let credits = NSAttributedString(
-            string: "Windows のメモ帳みたいな、ただのテキストエディタ。\nタブなし・自動復元なし。",
-            attributes: [.font: NSFont.systemFont(ofSize: 11),
-                         .foregroundColor: NSColor.secondaryLabelColor,
-                         .paragraphStyle: paragraph])
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: AppInfo.name,
             .applicationVersion: AppInfo.version,
-            .credits: credits,
         ])
     }
 

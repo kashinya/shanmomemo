@@ -32,7 +32,10 @@ jobs:
 
       - name: Check universal binary
         run: |
-          ARCHS_FOUND="$(lipo -archs "build/メモ帳.app/Contents/MacOS/Memocho")"
+          APP="$(ls -d build/*.app)"
+          echo "$APP"
+          [ "$(basename "$APP")" = "Shanmoメモ帳.app" ] || { echo "::error::名前が Shanmoメモ帳 になってない: $APP" >&2; exit 1; }
+          ARCHS_FOUND="$(lipo -archs "$APP/Contents/MacOS/Memocho")"
           echo "$ARCHS_FOUND"
           for ARCH in arm64 x86_64; do
             case " $ARCHS_FOUND " in
@@ -50,7 +53,7 @@ jobs:
 
       - name: Zip app
         if: success()
-        run: ditto -c -k --keepParent "build/メモ帳.app" Memocho.zip
+        run: ditto -c -k --keepParent "$(ls -d build/*.app)" Memocho.zip
 
       - uses: actions/upload-artifact@v4
         if: success()
@@ -64,7 +67,8 @@ jobs:
         continue-on-error: true
         timeout-minutes: 5
         run: |
-          APP="build/メモ帳.app"
+          APP="$(ls -d build/*.app)"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' -c 'Print :NSHumanReadableCopyright' "$APP/Contents/Info.plist"
           du -sk "$APP"
           ls -l "$APP/Contents/MacOS/Memocho" "$APP/Contents/Resources"
           for ARCH in arm64 x86_64; do
@@ -90,10 +94,10 @@ jobs:
           set -o pipefail
           ./build.sh > /dev/null
           for ARCH in arm64 x86_64; do
-            lipo -thin "$ARCH" -output "$RUNNER_TEMP/Memocho-Osize-$ARCH" "build/メモ帳.app/Contents/MacOS/Memocho"
+            lipo -thin "$ARCH" -output "$RUNNER_TEMP/Memocho-Osize-$ARCH" "$(ls -d build/*.app)/Contents/MacOS/Memocho"
             echo "-Osize $ARCH: $(stat -f %z "$RUNNER_TEMP/Memocho-Osize-$ARCH") B"
           done
-          "$RUNNER_TEMP/launch-time" "build/メモ帳.app" 6
+          "$RUNNER_TEMP/launch-time" "$(ls -d build/*.app)" 6
 
       # ロゴなしのビルド（こっちもアップロードせん）
       - name: Build without SHANMO logo (arm64 only)
@@ -104,10 +108,13 @@ jobs:
         run: |
           set -o pipefail
           ./build.sh 2>&1 | tee build.log
-          RES="build/メモ帳.app/Contents/Resources"
+          APP="$(ls -d build/*.app)"
+          [ "$(basename "$APP")" = "SEDITメモ.app" ] || { echo "::error::ロゴなしやのに名前が SEDITメモ になってない: $APP" >&2; exit 1; }
+          /usr/libexec/PlistBuddy -c 'Print :NSHumanReadableCopyright' "$APP/Contents/Info.plist"
+          RES="$APP/Contents/Resources"
           if [ -e "$RES/StatusLogo.png" ]; then echo "::error::ロゴなしやのに StatusLogo.png が入ってる" >&2; exit 1; fi
           cmp "$RES/AppIcon.icns" Resources/AppIcon-plain.icns
-          codesign --verify --strict --verbose=1 "build/メモ帳.app"
+          codesign --verify --strict --verbose=1 "$(ls -d build/*.app)"
 
       # フォントを落として埋め込む流れと、埋め込んだあとの署名が通るか（こっちはアップロードせん）
       - name: Build with PC-9800 font (arm64 only)
@@ -116,9 +123,9 @@ jobs:
         run: |
           set -o pipefail
           ./build.sh 2>&1 | tee build.log
-          FONT="build/メモ帳.app/Contents/Resources/Fonts/pc-9800.ttf"
+          FONT="$(ls -d build/*.app)/Contents/Resources/Fonts/pc-9800.ttf"
           if [ -f "$FONT" ]; then
-            codesign --verify --strict --verbose=1 "build/メモ帳.app"
+            codesign --verify --strict --verbose=1 "$(ls -d build/*.app)"
           else
             echo "::warning::PC-9800 フォントが埋め込まれてない（retro-type.com から取れなかった？）"
           fi

@@ -31,6 +31,11 @@ enum MainMenu {
         fileMenu.addItem(hidden(item("新しいウィンドウ", #selector(AppDelegate.fileNewWindow(_:)), "n", [.command, .shift])))
         fileMenu.addItem(item("開く…", #selector(EditorWindowController.fileOpen(_:)), "o"))
         fileMenu.addItem(item("iCloud Drive から開く…", #selector(EditorWindowController.fileOpenFromICloud(_:))))
+        let recentItem = NSMenuItem(title: "最近使ったファイル", action: nil, keyEquivalent: "")
+        let recentMenu = NSMenu(title: "最近使ったファイル")
+        recentMenu.delegate = RecentFiles.shared
+        recentItem.submenu = recentMenu
+        fileMenu.addItem(recentItem)
         let reopenItem = NSMenuItem(title: "文字コードを指定して開き直す", action: nil, keyEquivalent: "")
         reopenItem.submenu = encodingMenu(title: "文字コードを指定して開き直す",
                                           action: #selector(EditorWindowController.reopenWithEncoding(_:)))

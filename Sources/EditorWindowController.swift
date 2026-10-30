@@ -48,7 +48,8 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     private(set) var lineEnding: LineEnding = .lf
     private(set) var isDirty = false
 
-    private var zoomPercent = 100
+    /// ズーム（%）。新しいウィンドウは、最後に変えたズームで開く
+    private var zoomPercent = Settings.shared.zoomPercent
     /// 落ちたとき用の控え（Recovery）の名前と、控えを書いたときの revision（控えが無ければ nil）
     private var recoveryID = UUID()
     private var recoveredRevision: Int?
@@ -172,7 +173,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.textContainerInset = NSSize(width: 4, height: 4)
         textView.isVerticallyResizable = true
         textView.maxSize = NSSize(width: EditorWindowController.unlimited, height: EditorWindowController.unlimited)
-        textView.minSize = NSSize(width: 0, height: scrollView.contentSize.height)
+        textView.minSize = NSSize(width: 0, height: visibleTextSize.height)
         textContainer.lineFragmentPadding = 2
 
         layoutManager.delegate = lineHeightDelegate
@@ -396,7 +397,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
     }
 
     func applyWordWrap() {
-        let size = scrollView.contentSize
+        let size = visibleTextSize
         let classic = Settings.shared.classicUI
         if Settings.shared.wordWrap {
             scrollView.hasHorizontalScroller = false
@@ -422,9 +423,15 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         textView.scrollRangeToVisible(textView.selectedRange())
     }
 
+    /// 本文が見えてるところの大きさ。行番号と桁ルーラーのぶんは除く（EditorScrollView がクリップビューをルーラーの外に置くので。
+    /// NSScrollView.contentSize はルーラーを引かんので、折り返しの幅に使うと右がルーラーの幅だけ見切れてた）
+    private var visibleTextSize: NSSize {
+        return scrollView.contentView.bounds.size
+    }
+
     /// 本文が短くてもウィンドウいっぱいをクリックできるようにしておく
     private func updateTextViewMinSize() {
-        let size = scrollView.contentSize
+        let size = visibleTextSize
         let wrap = Settings.shared.wordWrap
         textView.minSize = NSSize(width: wrap ? 0 : size.width, height: size.height)
         var frameSize = textView.frame.size
@@ -453,7 +460,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let font = textView.typingAttributes[.font] as? NSFont
         let reserve = ceil((font?.pointSize ?? 16) / 2)
         // すき間は左だけ（右は ↓ の reserve）
-        let width = max(0, scrollView.contentSize.width - textView.textContainerInset.width - reserve)
+        let width = max(0, visibleTextSize.width - textView.textContainerInset.width - reserve)
         let size = NSSize(width: width, height: EditorWindowController.unlimited)
         if textContainer.size != size {
             textContainer.size = size
@@ -593,11 +600,12 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
             functionBar.frame = NSRect(x: area.minX, y: max(area.minY, area.maxY - row), width: area.width, height: row)
             return NSRect(x: area.minX, y: area.minY + row, width: area.width, height: max(0, area.height - row * 2))
         }
-        /// 本文の欄から、スクロールする部分を取る。SEDIT 風はファンクションキーの欄の上にすき間をあける
+        /// 本文の欄から、スクロールする部分を取る。SEDIT 風は上の行の下とファンクションキーの欄の上に同じだけすき間をあける
         /// （本文の背景はすき間にも敷くので、テーマの色・半透明・背景画像はそのままつながる）
         func scrollFrame(in text: NSRect) -> NSRect {
             guard sedit else { return text }
-            return NSRect(x: text.minX, y: text.minY, width: text.width, height: max(0, text.height - Sedit.editorMargin))
+            let margin = Sedit.editorMargin
+            return NSRect(x: text.minX, y: text.minY + margin, width: text.width, height: max(0, text.height - margin * 2))
         }
 
         guard Settings.shared.classicUI else {
@@ -641,6 +649,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         let clamped = max(EditorWindowController.minZoom, min(EditorWindowController.maxZoom, value))
         guard clamped != zoomPercent else { return }
         zoomPercent = clamped
+        Settings.shared.zoomPercent = clamped   // 次に開くウィンドウ（次の起動も）このズームで
         applyFont()
         updateStatusNow()
     }
@@ -701,6 +710,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
         replaceAllText(with: text)
         discardRecovery()   // 前の文書（保存せずに捨てた）の控えを残さん
+        RecentFiles.note(url)
         fileURL = url
         encoding = loaded.encoding
         lineEnding = loaded.lineEnding
@@ -841,6 +851,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
         updateTitle()
         updateStatusNow()
         rememberFrame()
+        RecentFiles.note(url)
         writeRecoveryIfNeeded()   // 保存したので控えを消す
         return true
     }
@@ -932,7 +943,7 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     /// ［表示］→［設定をすべて初期値に戻す…］のあと: 全部を設定に合わせ直す。ズームも 100% に戻す
     func applyAllSettings() {
-        zoomPercent = 100
+        zoomPercent = Settings.shared.zoomPercent
         applyTheme()
         applyWordWrap()
         // 枠の付け外しは、変わるときだけ（変わらんのに呼ぶと、Mac の全画面を抜けてしまう）
@@ -967,6 +978,28 @@ final class EditorWindowController: NSObject, NSWindowDelegate, NSTextViewDelega
 
     @objc func fileOpen(_ sender: Any?) {
         openWithPanel(directory: nil)
+    }
+
+    /// ［ファイル］→［最近使ったファイル］の項目: ［開く…］と同じく、このウィンドウで開く
+    @objc func openRecentFile(_ sender: Any?) {
+        guard let path = (sender as? NSMenuItem)?.representedObject as? String else { return }
+        let url = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: path) else {
+            RecentFiles.forget(url)
+            showError("「\(url.lastPathComponent)」が見つかりません。", CocoaError(.fileNoSuchFile))
+            return
+        }
+        if let other = AppDelegate.shared.controller(showing: url) {
+            other.window.makeKeyAndOrderFront(nil)
+            return
+        }
+        guard confirmDiscardIfNeeded() else {
+            MacroRecorder.shared.abortIfPlaying()
+            return
+        }
+        if !load(url, encoding: nil) {
+            MacroRecorder.shared.abortIfPlaying()
+        }
     }
 
     private func openWithPanel(directory: URL?) {

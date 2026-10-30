@@ -54,6 +54,9 @@ final class Settings {
         static let showLineNumbers = "ShowLineNumbers"
         static let showColumnRuler = "ShowColumnRuler"
         static let showCharacterCount = "ShowCharacterCount"
+        static let zoomPercent = "ZoomPercent"
+        static let recentFiles = "RecentFiles"
+        static let imeLog = "IMELog"
     }
 
     /// このアプリが覚えてることを全部消して、入れたときの状態に戻す（ファイルごとのウィンドウの位置・背景画像も）。
@@ -85,6 +88,7 @@ final class Settings {
             Key.showLineNumbers: false,
             Key.showColumnRuler: false,
             Key.showCharacterCount: false,
+            Key.zoomPercent: 100,
         ])
     }
 
@@ -140,6 +144,26 @@ final class Settings {
     }
 
     /// 本文に使うフォント。等幅フォントモードのときはフォントパネルで選んだのより優先
+    /// ズーム（%）。最後に変えたズームを、次に開くウィンドウに使う
+    var zoomPercent: Int {
+        get {
+            let value = defaults.integer(forKey: Key.zoomPercent)
+            return max(EditorWindowController.minZoom, min(EditorWindowController.maxZoom, value == 0 ? 100 : value))
+        }
+        set { defaults.set(newValue, forKey: Key.zoomPercent) }
+    }
+
+    /// ［ファイル］→［最近使ったファイル］（新しい順のパス、10 個まで）
+    var recentFiles: [String] {
+        get { return defaults.stringArray(forKey: Key.recentFiles) ?? [] }
+        set { defaults.set(Array(newValue.prefix(10)), forKey: Key.recentFiles) }
+    }
+
+    /// 隠し設定: 変換候補の窓の位置を調べるため、IME とのやりとりを ~/Library/Logs/local.memocho-ime.log に書く
+    var imeLog: Bool {
+        return defaults.bool(forKey: Key.imeLog)
+    }
+
     var editorFont: NSFont {
         return monospaceMode || seditMode ? Settings.monospaceFont : font
     }
@@ -212,7 +236,7 @@ final class Settings {
     }
 
     /// ［書式］→［行間］で選べる倍率（%）
-    static let lineSpacingChoices = [100, 115, 130, 150, 200]
+    static let lineSpacingChoices = [100, 110, 115, 120, 130, 150, 200]
 
     var lineSpacingPercent: Int {
         get { return min(300, max(100, defaults.integer(forKey: Key.lineSpacing))) }
